@@ -1,0 +1,357 @@
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  Switch,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Colors } from '../../constants/Colors';
+import { useMood } from '../../store/MoodContext';
+import { getMoodConfig } from '../../constants/Moods';
+import { MoodLevel } from '../../types';
+
+interface SettingRowProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  subtitle?: string;
+  value?: boolean;
+  onToggle?: (v: boolean) => void;
+  onPress?: () => void;
+  destructive?: boolean;
+}
+
+function SettingRow({ icon, label, subtitle, value, onToggle, onPress, destructive }: SettingRowProps) {
+  return (
+    <TouchableOpacity
+      style={styles.settingRow}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress && !onToggle}
+    >
+      <View style={[styles.settingIcon, destructive && { backgroundColor: '#FEF2F2' }]}>
+        <Ionicons
+          name={icon}
+          size={18}
+          color={destructive ? Colors.error : Colors.primary}
+        />
+      </View>
+      <View style={styles.settingMeta}>
+        <Text style={[styles.settingLabel, destructive && { color: Colors.error }]}>{label}</Text>
+        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+      </View>
+      {onToggle !== undefined && value !== undefined ? (
+        <Switch
+          value={value}
+          onValueChange={onToggle}
+          trackColor={{ false: Colors.border, true: Colors.primary }}
+          thumbColor="#fff"
+        />
+      ) : onPress ? (
+        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+      ) : null}
+    </TouchableOpacity>
+  );
+}
+
+export default function ProfileScreen() {
+  const { entries, getStreak, getAverageMood } = useMood();
+  const [notifications, setNotifications] = useState(true);
+  const [dailyReminder, setDailyReminder] = useState(true);
+
+  const streak = getStreak();
+  const avg30 = getAverageMood(30);
+  const totalEntries = entries.length;
+
+  const avgConfig = avg30 > 0 ? getMoodConfig(Math.round(avg30) as MoodLevel) : null;
+
+  const firstEntryDate = entries.length > 0
+    ? new Date(entries[entries.length - 1].date + 'T12:00:00').toLocaleDateString('en-US', {
+        month: 'long', year: 'numeric',
+      })
+    : null;
+
+  function handleExport() {
+    Alert.alert(
+      'Export Data',
+      'Your mood data export feature will be available soon. It will export as CSV or JSON.',
+      [{ text: 'OK' }]
+    );
+  }
+
+  function handleClearData() {
+    Alert.alert(
+      'Clear All Data',
+      'This will permanently delete all your mood entries. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            await AsyncStorage.removeItem('@moodboard_entries');
+            Alert.alert('Cleared', 'All your data has been deleted. Restart the app to see changes.');
+          },
+        },
+      ]
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Profile Header */}
+        <LinearGradient
+          colors={['#7C6FFF', '#FF6B9D']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.profileHeader}
+        >
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>A</Text>
+          </View>
+          <Text style={styles.profileName}>Alex Johnson</Text>
+          <Text style={styles.profileSince}>
+            {firstEntryDate ? `Tracking since ${firstEntryDate}` : 'Start logging your mood!'}
+          </Text>
+          <View style={styles.profileBadge}>
+            <Text style={styles.profileBadgeText}>
+              {streak > 7 ? '🔥 On Fire!' : streak > 3 ? '⚡ Building Habits' : '🌱 Getting Started'}
+            </Text>
+          </View>
+        </LinearGradient>
+
+        {/* Stats Row */}
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: '#F97316' }]}>{streak}</Text>
+            <Text style={styles.statLabel}>Day Streak</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: Colors.primary }]}>{totalEntries}</Text>
+            <Text style={styles.statLabel}>Total Entries</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>
+              {avgConfig ? avgConfig.emoji : '—'}
+            </Text>
+            <Text style={styles.statLabel}>Avg Mood</Text>
+          </View>
+        </View>
+
+        {/* Notifications */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon="notifications"
+              label="Push Notifications"
+              subtitle="Receive mood reminders"
+              value={notifications}
+              onToggle={setNotifications}
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="alarm"
+              label="Daily Reminder"
+              subtitle="Remind me to log my mood at 8:00 PM"
+              value={dailyReminder}
+              onToggle={setDailyReminder}
+            />
+          </View>
+        </View>
+
+        {/* Preferences */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Preferences</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon="moon"
+              label="Dark Mode"
+              subtitle="Coming soon"
+              onPress={() => Alert.alert('Coming Soon', 'Dark mode will be available in the next update!')}
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="language"
+              label="Language"
+              subtitle="English"
+              onPress={() => Alert.alert('Coming Soon', 'More languages coming soon!')}
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="lock-closed"
+              label="App Lock"
+              subtitle="Protect with Face ID / PIN"
+              onPress={() => Alert.alert('Coming Soon', 'App lock coming in the next update!')}
+            />
+          </View>
+        </View>
+
+        {/* Data */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon="download"
+              label="Export Data"
+              subtitle="Download your mood history"
+              onPress={handleExport}
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="cloud-upload"
+              label="Backup to Cloud"
+              subtitle="Coming soon"
+              onPress={() => Alert.alert('Coming Soon', 'Cloud backup coming soon!')}
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="trash"
+              label="Clear All Data"
+              subtitle="Permanently delete all entries"
+              onPress={handleClearData}
+              destructive
+            />
+          </View>
+        </View>
+
+        {/* About */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>About</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon="information-circle"
+              label="Version"
+              subtitle="1.0.0"
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="heart"
+              label="Rate the App"
+              onPress={() => Alert.alert('Thank you!', 'Rating option will be available on the App Store!')}
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              icon="mail"
+              label="Contact Support"
+              onPress={() => Alert.alert('Support', 'support@moodboard.app')}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.footer}>Made with ❤️ for your mental wellness</Text>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: Colors.background },
+  scroll: { flex: 1 },
+  content: { paddingBottom: 40, gap: 20 },
+
+  profileHeader: {
+    alignItems: 'center',
+    paddingTop: 32,
+    paddingBottom: 28,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  avatarCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.5)',
+    marginBottom: 4,
+  },
+  avatarText: { fontSize: 32, fontWeight: '700', color: '#fff' },
+  profileName: { fontSize: 22, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  profileSince: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
+  profileBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 99,
+    marginTop: 4,
+  },
+  profileBadgeText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.card,
+    marginHorizontal: 20,
+    borderRadius: 20,
+    paddingVertical: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  statItem: { flex: 1, alignItems: 'center', gap: 4 },
+  statValue: { fontSize: 26, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5 },
+  statLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  statDivider: { width: 1, backgroundColor: Colors.border },
+
+  section: { paddingHorizontal: 20, gap: 10 },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  settingsCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 14,
+  },
+  settingIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingMeta: { flex: 1 },
+  settingLabel: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  settingSubtitle: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  divider: { height: 1, backgroundColor: Colors.border, marginLeft: 66 },
+
+  footer: {
+    textAlign: 'center',
+    fontSize: 13,
+    color: Colors.textMuted,
+    paddingHorizontal: 20,
+  },
+});
