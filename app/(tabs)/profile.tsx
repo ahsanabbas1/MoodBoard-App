@@ -6,6 +6,10 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../../constants/Colors';
 import { useMood } from '../../store/MoodContext';
+import { useAuth } from '../../store/AuthContext';
 import { getMoodConfig } from '../../constants/Moods';
 import { MoodLevel } from '../../types';
 
@@ -62,8 +67,14 @@ function SettingRow({ icon, label, subtitle, value, onToggle, onPress, destructi
 
 export default function ProfileScreen() {
   const { entries, getStreak, getAverageMood } = useMood();
+  const { user, updateProfile } = useAuth();
+  
   const [notifications, setNotifications] = useState(true);
   const [dailyReminder, setDailyReminder] = useState(true);
+  
+  // Edit Name State
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
 
   const streak = getStreak();
   const avg30 = getAverageMood(30);
@@ -103,6 +114,13 @@ export default function ProfileScreen() {
     );
   }
 
+  async function handleSaveName() {
+    if (editNameValue.trim().length > 0) {
+      await updateProfile({ fullName: editNameValue.trim() });
+    }
+    setIsEditingName(false);
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
@@ -118,9 +136,19 @@ export default function ProfileScreen() {
           style={styles.profileHeader}
         >
           <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>A</Text>
+            <Text style={styles.avatarText}>
+              {user?.fullName?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+            </Text>
           </View>
-          <Text style={styles.profileName}>Alex Johnson</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.profileName}>{user?.fullName || 'User'}</Text>
+            <TouchableOpacity onPress={() => {
+              setEditNameValue(user?.fullName || '');
+              setIsEditingName(true);
+            }}>
+              <Ionicons name="pencil" size={16} color="rgba(255,255,255,0.8)" style={{ marginLeft: 6, marginTop: 4 }} />
+            </TouchableOpacity>
+          </View>
           <Text style={styles.profileSince}>
             {firstEntryDate ? `Tracking since ${firstEntryDate}` : 'Start logging your mood!'}
           </Text>
@@ -254,6 +282,34 @@ export default function ProfileScreen() {
 
         <Text style={styles.footer}>Made with ❤️ for your mental wellness</Text>
       </ScrollView>
+
+      {/* Edit Name Modal */}
+      <Modal visible={isEditingName} transparent animationType="fade">
+        <KeyboardAvoidingView 
+          style={styles.modalOverlay} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Profile Name</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editNameValue}
+              onChangeText={setEditNameValue}
+              placeholder="Enter your name"
+              placeholderTextColor={Colors.textMuted}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsEditingName(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveName}>
+                <Text style={styles.modalSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -282,6 +338,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   avatarText: { fontSize: 32, fontWeight: '700', color: '#fff' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   profileName: { fontSize: 22, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
   profileSince: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
   profileBadge: {
@@ -353,5 +410,64 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textMuted,
     paddingHorizontal: 20,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 16,
+  },
+  modalInput: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: Colors.textPrimary,
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  modalSaveBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  modalSaveText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
   },
 });

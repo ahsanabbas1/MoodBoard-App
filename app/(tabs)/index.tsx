@@ -13,6 +13,7 @@ import { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import { useMood } from '../../store/MoodContext';
+import { useAuth } from '../../store/AuthContext';
 import { getMoodConfig } from '../../constants/Moods';
 import StatCard from '../../components/StatCard';
 import EntryCard from '../../components/EntryCard';
@@ -24,6 +25,7 @@ import { useMoodStats } from '../../hooks/useMoodStats';
 export default function HomeScreen() {
   const router = useRouter();
   const { getTodayEntry } = useMood();
+  const { signOut, user } = useAuth();
   const { 
     streak, 
     avgConfig, 
@@ -41,6 +43,15 @@ export default function HomeScreen() {
     setTimeout(() => setRefreshing(false), 600);
   }, []);
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      router.replace('/login');
+    } catch (error) {
+      console.error('Failed to log out', error);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
@@ -55,11 +66,23 @@ export default function HomeScreen() {
             <Text style={styles.greeting}>{getGreeting()} 👋</Text>
             <Text style={styles.date}>{formatDate(new Date())}</Text>
           </View>
-          <TouchableOpacity style={styles.avatarBtn} onPress={() => router.push('/(tabs)/profile')}>
-            <LinearGradient colors={['#7C6FFF', '#FF6B9D']} style={styles.avatar}>
-              <Text style={styles.avatarText}>A</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => {/* Handle notifications */}}>
+              <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={24} color={Colors.textPrimary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.avatarBtn} onPress={() => router.push('/(tabs)/profile')}>
+              <LinearGradient colors={['#7C6FFF', '#FF6B9D']} style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {user?.fullName?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Today's Mood Card */}
@@ -189,6 +212,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
   },
   avatarBtn: { borderRadius: 22, overflow: 'hidden' },
   avatar: {

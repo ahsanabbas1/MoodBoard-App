@@ -22,8 +22,9 @@ export async function initDatabase() {
   `);
 
   await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS mood_entries (
+    CREATE TABLE IF NOT EXISTS user_mood_entries (
       id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
       date TEXT NOT NULL,
       time TEXT NOT NULL,
       mood INTEGER NOT NULL,
@@ -34,30 +35,14 @@ export async function initDatabase() {
     );
   `);
 
-  const tableInfo = await db.getAllAsync<{ name: string }>(
-    "PRAGMA table_info('mood_entries');",
-  );
-  const existingColumns = tableInfo.map((col) => col.name);
-
-  if (!existingColumns.includes("intensity")) {
-    await db.execAsync(
-      "ALTER TABLE mood_entries ADD COLUMN intensity INTEGER DEFAULT 5;",
-    );
-  }
-  if (!existingColumns.includes("tags")) {
-    await db.execAsync("ALTER TABLE mood_entries ADD COLUMN tags TEXT;");
-  }
-  if (!existingColumns.includes("note")) {
-    await db.execAsync("ALTER TABLE mood_entries ADD COLUMN note TEXT;");
-  }
-
   return db;
 }
 
-export async function getEntries(): Promise<MoodEntry[]> {
+export async function getEntries(userId: string): Promise<MoodEntry[]> {
   const db = await getDb();
   const result = await db.getAllAsync<any>(
-    "SELECT * FROM mood_entries ORDER BY createdAt DESC",
+    "SELECT * FROM user_mood_entries WHERE user_id = ? ORDER BY createdAt DESC",
+    [userId]
   );
 
   return result.map((row) => ({
@@ -67,12 +52,13 @@ export async function getEntries(): Promise<MoodEntry[]> {
   }));
 }
 
-export async function insertEntry(entry: MoodEntry) {
+export async function insertEntry(userId: string, entry: MoodEntry) {
   const db = await getDb();
   await db.runAsync(
-    "INSERT INTO mood_entries (id, date, time, mood, intensity, note, tags, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO user_mood_entries (id, user_id, date, time, mood, intensity, note, tags, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       entry.id,
+      userId,
       entry.date,
       entry.time,
       entry.mood,
@@ -84,33 +70,12 @@ export async function insertEntry(entry: MoodEntry) {
   );
 }
 
-export async function insertEntries(entries: MoodEntry[]) {
+export async function removeEntry(userId: string, id: string) {
   const db = await getDb();
-  await db.withTransactionAsync(async () => {
-    for (const entry of entries) {
-      await db.runAsync(
-        "INSERT INTO mood_entries (id, date, time, mood, intensity, note, tags, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-          entry.id,
-          entry.date,
-          entry.time,
-          entry.mood,
-          entry.intensity ?? 5,
-          entry.note,
-          JSON.stringify(entry.tags),
-          entry.createdAt,
-        ],
-      );
-    }
-  });
+  await db.runAsync("DELETE FROM user_mood_entries WHERE id = ? AND user_id = ?", [id, userId]);
 }
 
-export async function removeEntry(id: string) {
+export async function clearAllEntries(userId: string) {
   const db = await getDb();
-  await db.runAsync("DELETE FROM mood_entries WHERE id = ?", [id]);
-}
-
-export async function clearAllEntries() {
-  const db = await getDb();
-  await db.runAsync("DELETE FROM mood_entries");
+  await db.runAsync("DELETE FROM user_mood_entries WHERE user_id = ?", [userId]);
 }

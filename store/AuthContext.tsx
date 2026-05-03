@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import * as Linking from 'expo-linking';
 import { supabase } from '../services/supabase';
 import { UserProfile, AuthState } from '../types/auth';
 
 interface AuthContextType extends AuthState {
-  signIn: (email: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -46,31 +49,105 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function fetchProfile(userId: string) {
-    // This will be expanded once we have the 'profiles' table in Supabase
-    // For now, we'll use a mock profile based on the user session
-    setUser({
-      id: userId,
-      email: session?.user?.email || '',
-      fullName: session?.user?.user_metadata?.full_name || 'User',
-      updatedAt: Date.now(),
-    });
+  async function fetchProfile(userId: string, currentSession?: any) {
+    const s = currentSession || session;
+    const email = s?.user?.email || '';
+    const defaultName = email.split('@')[0] || 'User';
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error && error.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const newProfile = {
+          id: userId,
+          email: email,
+          full_name: defaultName,
+          updated_at: new Date().toISOString(),
+        };
+        const { error: insertError } = await supabase.from('profiles').insert(newProfile);
+        if (!insertError) {
+          setUser({
+            id: userId,
+            email: email,
+            fullName: defaultName,
+            updatedAt: Date.now(),
+          });
+        } else {
+          console.error('Error creating profile:', insertError);
+          setUser({ id: userId, email, fullName: defaultName, updatedAt: Date.now() });
+        }
+      } else if (data) {
+        setUser({
+          id: data.id,
+          email: data.email,
+          fullName: data.full_name || defaultName,
+          avatarUrl: data.avatar_url,
+          currentMoodEmoji: data.current_mood_emoji,
+          updatedAt: new Date(data.updated_at).getTime(),
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+    }
   }
 
-  async function signIn(email: string) {
-    // In a real app, we'd use supabase.auth.signInWithOtp or signInWithPassword
-    // For this demonstration, we'll mock a login
+  async function updateProfile(updates: Partial<UserProfile>) {
+    if (!user) return;
+    
+    // Optimistic update locally
+    setUser({ ...user, ...updates, updatedAt: Date.now() });
+
+    const dbUpdates = {
+      id: user.id,
+      email: user.email,
+      full_name: updates.fullName !== undefined ? updates.fullName : user.fullName,
+      current_mood_emoji: updates.currentMoodEmoji !== undefined ? updates.currentMoodEmoji : user.currentMoodEmoji,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('profiles').upsert(dbUpdates);
+    if (error) {
+      console.error('Error updating profile:', error);
+    }
+  }
+
+  async function signIn(email: string, password: string) {
     setLoading(true);
-    setTimeout(() => {
-      setUser({
-        id: 'mock-user-123',
-        email: email,
-        fullName: 'Ahsan Abbas',
-        avatarUrl: 'https://i.pravatar.cc/150?img=47',
-        updatedAt: Date.now(),
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
+      if (error) throw error;
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
+  }
+
+  async function signUp(email: string, password: string) {
+    setLoading(true);
+    try {
+      // Create a dynamic redirect URL that works for both local Expo Go and compiled APKs
+      const redirectUrl = Linking.createURL('/login');
+      
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+        }
+      });
+      if (error) throw error;
+      // The UI will handle the success message and mode switch
+
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function signOut() {
@@ -80,7 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

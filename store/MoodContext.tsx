@@ -1,10 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { MoodEntry, MoodLevel } from '../types';
 import * as db from './database';
-
-const STORAGE_KEY = '@moodboard_entries';
-const MIGRATION_KEY = '@moodboard_migrated_to_sqlite';
+import { useAuth } from './AuthContext';
+import { getMoodConfig } from '../constants/Moods';
 
 interface MoodContextType {
   entries: MoodEntry[];
@@ -20,114 +18,26 @@ interface MoodContextType {
 
 const MoodContext = createContext<MoodContextType | undefined>(undefined);
 
-function generateMockEntries(): MoodEntry[] {
-  const entries: MoodEntry[] = [];
-  const moods: MoodLevel[] = [6, 5, 4, 3, 6, 5, 3, 2, 5, 6, 3, 4, 6, 5, 3, 6, 4, 5, 3, 6, 5, 2, 3, 4, 6, 5, 3, 4, 6, 5];
-  const notes = [
-    'Had a great morning workout!',
-    'Productive day at work.',
-    'Feeling a bit tired but okay.',
-    "Didn't sleep well last night.",
-    'Spent quality time with family.',
-    'Finished a big project!',
-    'Just an average day.',
-    'Stressed about deadlines.',
-    'Good lunch with friends.',
-    'Feeling grateful today.',
-    '',
-    'Went for a long walk.',
-    'Amazing sunset today!',
-    'Read a great book.',
-    '',
-    'Cooked a new recipe.',
-    'Caught up with old friends.',
-    'Feeling energetic!',
-    'A bit under the weather.',
-    'Meditation helped a lot.',
-    'Great team meeting.',
-    'Overwhelmed with tasks.',
-    'Took a rest day.',
-    'Enjoyed a quiet evening.',
-    'Birthday celebration!',
-    'Tried a new coffee shop.',
-    'Cloudy day, feeling meh.',
-    'Exercise boosted my mood.',
-    'Grateful for good health.',
-    'Looking forward to the weekend.',
-  ];
-  const tagSets = [
-    ['Exercise', 'Health'], ['Work', 'Productive'], ['Tired', 'Sleep'],
-    ['Sleep'], ['Family', 'Grateful'], ['Work', 'Productive'],
-    [], ['Work', 'Anxiety'], ['Friends', 'Food'], ['Grateful'],
-    [], ['Exercise', 'Health'], ['Weather', 'Grateful'], ['Relaxed', 'Creative'],
-    [], ['Food', 'Creative'], ['Friends', 'Social'], ['Exercise', 'Health'],
-    ['Health'], ['Relaxed'], ['Work'], ['Work', 'Anxiety', 'Tired'],
-    ['Health', 'Relaxed'], ['Relaxed'], ['Friends', 'Social', 'Family'],
-    ['Food', 'Social'], ['Weather'], ['Exercise', 'Health'],
-    ['Health', 'Grateful'], ['Work', 'Productive'],
-  ];
-
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const idx = 29 - i;
-
-    if (i === 0) continue; // no entry for today yet
-
-    entries.push({
-      id: `mock_${idx}`,
-      date: dateStr,
-      time: `${8 + Math.floor(Math.random() * 4)}:${Math.random() > 0.5 ? '00' : '30'}`,
-      mood: moods[idx] as MoodLevel ?? 3,
-      intensity: 5 + Math.floor(Math.random() * 5),
-      note: notes[idx] ?? '',
-      tags: tagSets[idx] ?? [],
-      createdAt: date.getTime(),
-    });
-  }
-
-  return entries;
-}
-
 export function MoodProvider({ children }: { children: React.ReactNode }) {
   const [entries, setEntries] = useState<MoodEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const isInitializing = useRef(false);
+  const { user, updateProfile } = useAuth();
 
   useEffect(() => {
-    if (!isInitializing.current) {
-      initAndLoad();
-    }
-  }, []);
+    initAndLoad();
+  }, [user?.id]); // Reload when user logs in or out
 
   async function initAndLoad() {
-    if (isInitializing.current) return;
-    isInitializing.current = true;
-    
-    try {
-      await db.initDatabase();
-      
-      // Check if we need to migrate from AsyncStorage
-      const migrated = await AsyncStorage.getItem(MIGRATION_KEY);
-      if (!migrated) {
-        const stored = await AsyncStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          try {
-            const oldEntries: MoodEntry[] = JSON.parse(stored);
-            await db.insertEntries(oldEntries);
-          } catch (e) {
-            console.error('Migration failed:', e);
-          }
-        } else {
-          // If no old data, seed with mocks
-          const mock = generateMockEntries();
-          await db.insertEntries(mock);
-        }
-        await AsyncStorage.setItem(MIGRATION_KEY, 'true');
-      }
+    if (!user?.id) {
+      setEntries([]);
+      setIsLoading(false);
+      return;
+    }
 
-      const allEntries = await db.getEntries();
+    try {
+      setIsLoading(true);
+      await db.initDatabase();
+      const allEntries = await db.getEntries(user.id);
       setEntries(allEntries);
     } catch (error) {
       console.error('Failed to init/load moods:', error);
@@ -137,6 +47,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function addEntry(mood: MoodLevel, intensity: number, note: string, tags: string[]) {
+    if (!user?.id) return;
     const now = new Date();
     const newEntry: MoodEntry = {
       id: `entry_${Date.now()}`,
@@ -149,14 +60,23 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
       createdAt: now.getTime(),
     };
     
-    await db.insertEntry(newEntry);
-    const updated = await db.getEntries();
+    await db.insertEntry(user.id, newEntry);
+    const updated = await db.getEntries(user.id);
     setEntries(updated);
+
+    // Sync current mood emoji to Supabase Profile for Family sharing
+    try {
+      const moodConfig = getMoodConfig(mood);
+      await updateProfile({ currentMoodEmoji: moodConfig.emoji });
+    } catch (e) {
+      console.error('Failed to sync mood emoji to profile:', e);
+    }
   }
 
   async function deleteEntry(id: string) {
-    await db.removeEntry(id);
-    const updated = await db.getEntries();
+    if (!user?.id) return;
+    await db.removeEntry(user.id, id);
+    const updated = await db.getEntries(user.id);
     setEntries(updated);
   }
 

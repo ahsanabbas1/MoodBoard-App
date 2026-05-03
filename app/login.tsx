@@ -9,6 +9,7 @@ import {
   Platform,
   Dimensions,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,17 +24,33 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn } = useAuth();
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const { signIn, signUp } = useAuth();
   const router = useRouter();
 
-  async function handleLogin() {
-    if (!email || !password) return;
+  async function handleAuth() {
+    setErrorMsg('');
+    setSuccessMsg('');
+    
+    if (!email || !password) {
+      setErrorMsg('Please enter both email and password');
+      return;
+    }
     
     setLoading(true);
     try {
-      await signIn(email);
-      router.replace('/(tabs)');
-    } catch (error) {
+      if (isSignUp) {
+        await signUp(email, password);
+        setSuccessMsg('Account created! Check your email for the confirmation link.');
+        setIsSignUp(false);
+      } else {
+        await signIn(email, password);
+        router.replace('/(tabs)');
+      }
+    } catch (error: any) {
+      setErrorMsg(error.message || 'An error occurred during authentication');
       console.error(error);
     } finally {
       setLoading(false);
@@ -59,6 +76,18 @@ export default function LoginScreen() {
             <Text style={styles.title}>MoodBoard</Text>
             <Text style={styles.subtitle}>Track your mood, share with family.</Text>
           </View>
+
+          {errorMsg ? (
+            <View style={styles.messageBoxError}>
+              <Text style={styles.messageText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
+          {successMsg ? (
+            <View style={styles.messageBoxSuccess}>
+              <Text style={styles.messageText}>{successMsg}</Text>
+            </View>
+          ) : null}
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
@@ -88,25 +117,29 @@ export default function LoginScreen() {
 
             <TouchableOpacity
               style={styles.loginBtn}
-              onPress={handleLogin}
+              onPress={handleAuth}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator color="#7C6FFF" />
               ) : (
-                <Text style={styles.loginBtnText}>Sign In</Text>
+                <Text style={styles.loginBtnText}>{isSignUp ? 'Sign Up' : 'Sign In'}</Text>
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.forgotBtn}>
-              <Text style={styles.forgotText}>Forgot Password?</Text>
-            </TouchableOpacity>
+            {!isSignUp && (
+              <TouchableOpacity style={styles.forgotBtn}>
+                <Text style={styles.forgotText}>Forgot Password?</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <TouchableOpacity>
-              <Text style={styles.signUpText}>Sign Up</Text>
+            <Text style={styles.footerText}>
+              {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+            </Text>
+            <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)}>
+              <Text style={styles.signUpText}>{isSignUp ? 'Sign In' : 'Sign Up'}</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -142,6 +175,29 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     marginTop: 8,
     textAlign: 'center',
+  },
+
+  messageBoxError: {
+    backgroundColor: 'rgba(255,59,48,0.2)',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,59,48,0.4)',
+  },
+  messageBoxSuccess: {
+    backgroundColor: 'rgba(52,199,89,0.2)',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(52,199,89,0.4)',
+  },
+  messageText: {
+    color: '#fff',
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '500',
   },
 
   form: { gap: 16 },
