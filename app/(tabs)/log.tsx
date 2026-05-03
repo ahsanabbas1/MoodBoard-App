@@ -8,17 +8,17 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import Slider from '@react-native-community/slider';
-import { Colors } from '../../constants/Colors';
-import { MOODS, TAGS } from '../../constants/Moods';
-import { useMood } from '../../store/MoodContext';
-import { MoodLevel } from '../../types';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { useState } from "react";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
+import { Colors } from "../../constants/Colors";
+import { MOODS, TAGS } from "../../constants/Moods";
+import { useMood } from "../../store/MoodContext";
+import { MoodLevel } from "../../types";
 
 export default function LogScreen() {
   const router = useRouter();
@@ -26,7 +26,7 @@ export default function LogScreen() {
 
   const [selectedMood, setSelectedMood] = useState<MoodLevel | null>(null);
   const [intensity, setIntensity] = useState(5);
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -34,24 +34,24 @@ export default function LogScreen() {
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
   }
 
   async function handleSave() {
     if (!selectedMood) {
-      Alert.alert('Select a mood', 'Please choose how you are feeling today.');
+      Alert.alert("Select a mood", "Please choose how you are feeling today.");
       return;
     }
 
     if (todayEntry) {
       Alert.alert(
-        'Already logged today',
+        "Already logged today",
         "You've already logged your mood today. Would you like to add another entry?",
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Add anyway', onPress: save },
-        ]
+          { text: "Cancel", style: "cancel" },
+          { text: "Add anyway", onPress: save },
+        ],
       );
       return;
     }
@@ -61,20 +61,26 @@ export default function LogScreen() {
 
   async function save() {
     setSaving(true);
-    await addEntry(selectedMood!, intensity, note.trim(), selectedTags);
+    const normalizedIntensity = Math.min(10, Math.max(0, intensity));
+    await addEntry(
+      selectedMood!,
+      normalizedIntensity,
+      note.trim(),
+      selectedTags,
+    );
     setSaving(false);
     setSelectedMood(null);
     setIntensity(5);
-    setNote('');
+    setNote("");
     setSelectedTags([]);
-    router.replace('/(tabs)');
+    router.replace("/(tabs)");
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
           style={styles.scroll}
@@ -84,10 +90,12 @@ export default function LogScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>How are you{'\n'}feeling today?</Text>
+            <Text style={styles.title}>How are you{"\n"}feeling today?</Text>
             <Text style={styles.subtitle}>
-              {new Date().toLocaleDateString('en-US', {
-                weekday: 'long', month: 'long', day: 'numeric',
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
               })}
             </Text>
           </View>
@@ -102,7 +110,9 @@ export default function LogScreen() {
                   style={[
                     styles.moodOption,
                     isSelected && { borderColor: mood.color, borderWidth: 2.5 },
-                    { backgroundColor: isSelected ? mood.bgColor : Colors.card },
+                    {
+                      backgroundColor: isSelected ? mood.bgColor : Colors.card,
+                    },
                   ]}
                   activeOpacity={0.75}
                   onPress={() => setSelectedMood(mood.level as MoodLevel)}
@@ -123,7 +133,12 @@ export default function LogScreen() {
                     {mood.label}
                   </Text>
                   {isSelected && (
-                    <View style={[styles.checkmark, { backgroundColor: mood.color }]}>
+                    <View
+                      style={[
+                        styles.checkmark,
+                        { backgroundColor: mood.color },
+                      ]}
+                    >
                       <Ionicons name="checkmark" size={10} color="#fff" />
                     </View>
                   )}
@@ -142,7 +157,7 @@ export default function LogScreen() {
             </View>
             <View style={styles.sliderWrapper}>
               <LinearGradient
-                colors={['#EF4444', '#EAB308', '#22C55E']}
+                colors={["#EF4444", "#EAB308", "#22C55E"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.sliderGradient}
@@ -193,14 +208,19 @@ export default function LogScreen() {
                     key={tag}
                     style={[
                       styles.tagChip,
-                      active && { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
+                      active && {
+                        backgroundColor: Colors.primaryLight,
+                        borderColor: Colors.primary,
+                      },
                     ]}
                     onPress={() => toggleTag(tag)}
                   >
                     <Text
                       style={[
                         styles.tagChipText,
-                        { color: active ? Colors.primary : Colors.textSecondary },
+                        {
+                          color: active ? Colors.primary : Colors.textSecondary,
+                        },
                       ]}
                     >
                       {tag}
@@ -219,7 +239,9 @@ export default function LogScreen() {
             disabled={saving}
           >
             <LinearGradient
-              colors={selectedMood ? ['#7C6FFF', '#9F97FF'] : ['#D1D5DB', '#D1D5DB']}
+              colors={
+                selectedMood ? ["#7C6FFF", "#9F97FF"] : ["#D1D5DB", "#D1D5DB"]
+              }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.saveBtnGradient}
@@ -248,7 +270,7 @@ const styles = StyleSheet.create({
   header: { paddingTop: 16, gap: 6 },
   title: {
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: "800",
     color: Colors.textPrimary,
     letterSpacing: -0.8,
     lineHeight: 34,
@@ -256,20 +278,20 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 15, color: Colors.textSecondary },
 
   moodGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     gap: 8,
   },
   moodOption: {
     flex: 1,
     aspectRatio: 0.8,
     borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1.5,
     borderColor: Colors.border,
-    overflow: 'hidden',
-    position: 'relative',
+    overflow: "hidden",
+    position: "relative",
     gap: 4,
     padding: 6,
   },
@@ -278,27 +300,27 @@ const styles = StyleSheet.create({
     opacity: 0.1,
   },
   moodEmoji: { fontSize: 30 },
-  moodLabel: { fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  moodLabel: { fontSize: 11, fontWeight: "600", textAlign: "center" },
   checkmark: {
-    position: 'absolute',
+    position: "absolute",
     top: 6,
     right: 6,
     width: 16,
     height: 16,
     borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   section: { gap: 12 },
   sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   sectionLabel: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.textPrimary,
   },
   intensityBadge: {
@@ -309,37 +331,37 @@ const styles = StyleSheet.create({
   },
   intensityBadgeText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
     color: Colors.primary,
   },
 
   sliderWrapper: {
     height: 44,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   sliderGradient: {
     height: 14,
     borderRadius: 7,
-    position: 'absolute',
+    position: "absolute",
     left: 4,
     right: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: "rgba(0,0,0,0.05)",
   },
   slider: {
-    width: '100%',
+    width: "100%",
     height: 44,
-    transform: [{ scaleY: 1.8 }, { scaleX: 1.8 }],
+    transform: [{ scaleY: 1.8 }],
   },
   sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: -4,
   },
   sliderLabel: {
     fontSize: 12,
     color: Colors.textMuted,
-    fontWeight: '500',
+    fontWeight: "500",
   },
 
   noteInput: {
@@ -356,11 +378,11 @@ const styles = StyleSheet.create({
   charCount: {
     fontSize: 12,
     color: Colors.textMuted,
-    textAlign: 'right',
+    textAlign: "right",
     marginTop: -4,
   },
 
-  tagsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tagsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tagChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -369,16 +391,21 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
   },
-  tagChipText: { fontSize: 13, fontWeight: '500' },
+  tagChipText: { fontSize: 13, fontWeight: "500" },
 
-  saveBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 8 },
+  saveBtn: { borderRadius: 16, overflow: "hidden", marginTop: 8 },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnGradient: {
     paddingVertical: 17,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
   },
-  saveBtnText: { fontSize: 17, fontWeight: '700', color: '#fff', letterSpacing: -0.2 },
+  saveBtnText: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: -0.2,
+  },
 });

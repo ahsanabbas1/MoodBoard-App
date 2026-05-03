@@ -1,22 +1,31 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Colors } from '../constants/Colors';
-import { getMoodConfig } from '../constants/Moods';
-import { MoodEntry } from '../types';
-import MoodBadge from './MoodBadge';
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
+import { Colors } from "../constants/Colors";
+import { getMoodConfig } from "../constants/Moods";
+import { MoodEntry } from "../types";
+import MoodBadge from "./MoodBadge";
 
 interface Props {
   entry: MoodEntry;
   showDate?: boolean;
+  compact?: boolean;
 }
 
-export default function EntryCard({ entry, showDate = false }: Props) {
+export default function EntryCard({
+  entry,
+  showDate = false,
+  compact = false,
+}: Props) {
   const router = useRouter();
   const config = getMoodConfig(entry.mood);
 
   const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr + 'T12:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const d = new Date(dateStr + "T12:00:00");
+    return d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
   };
 
   return (
@@ -32,12 +41,18 @@ export default function EntryCard({ entry, showDate = false }: Props) {
           <View style={styles.meta}>
             <Text style={styles.moodLabel}>{config.label}</Text>
             <Text style={styles.time}>
-              {showDate ? formatDate(entry.date) : ''}{showDate && entry.time ? ' · ' : ''}{entry.time}
+              {showDate ? formatDate(entry.date) : ""}
+              {showDate && entry.time ? " · " : ""}
+              {entry.time}
             </Text>
           </View>
         </View>
-        {entry.note ? <Text style={styles.note} numberOfLines={2}>{entry.note}</Text> : null}
-        {entry.tags.length > 0 && (
+        {!compact && entry.note ? (
+          <Text style={styles.note} numberOfLines={2}>
+            {entry.note}
+          </Text>
+        ) : null}
+        {!compact && entry.tags.length > 0 && (
           <View style={styles.tags}>
             {entry.tags.slice(0, 3).map((tag) => (
               <View key={tag} style={styles.tag}>
@@ -58,9 +73,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.card,
     borderRadius: 16,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    shadowColor: '#000',
+    flexDirection: "row",
+    overflow: "hidden",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -76,8 +91,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
   },
   meta: {
@@ -85,7 +100,7 @@ const styles = StyleSheet.create({
   },
   moodLabel: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.textPrimary,
   },
   time: {
@@ -99,10 +114,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   tags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 6,
-    alignItems: 'center',
+    alignItems: "center",
   },
   tag: {
     backgroundColor: Colors.primaryLight,
@@ -113,11 +128,11 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 11,
     color: Colors.primary,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   moreTags: {
     fontSize: 11,
     color: Colors.textMuted,
-    fontWeight: '500',
+    fontWeight: "500",
   },
 });
