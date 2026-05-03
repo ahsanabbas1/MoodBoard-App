@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { View, StyleSheet, Platform } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/Colors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -79,6 +79,24 @@ export default function TabLayout() {
           tabBarIcon: ({ focused }) => (
             <TabIcon name="ellipsis-horizontal" focused={focused} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="family"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

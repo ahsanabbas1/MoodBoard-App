@@ -6,7 +6,7 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { Href, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/Colors";
 
@@ -17,10 +17,10 @@ export default function MoreScreen() {
     {
       label: "Notifications",
       icon: "notifications",
-      route: "/(tabs)/notifications",
+      route: "/(tabs)/notifications" as Href,
     },
-    { label: "Family", icon: "people", route: "/(tabs)/family" },
-    { label: "Profile", icon: "person", route: "/(tabs)/profile" },
+    { label: "Family", icon: "people", route: "/(tabs)/family" as Href },
+    { label: "Profile", icon: "person", route: "/(tabs)/profile" as Href },
   ];
 
   return (
