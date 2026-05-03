@@ -4,7 +4,7 @@ import { Colors } from '../../constants/Colors';
 import { useMood } from '../../store/MoodContext';
 import { MOODS, getMoodConfig } from '../../constants/Moods';
 import { MoodLevel } from '../../types';
-import WeekMoodChart from '../../components/WeekMoodChart';
+import MoodAreaChart from '../../components/MoodAreaChart';
 import MoodDistributionPie from '../../components/MoodDistributionPie';
 import SectionHeader from '../../components/SectionHeader';
 
@@ -18,19 +18,6 @@ export default function InsightsScreen() {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     return e.date >= cutoff.toISOString().split('T')[0];
-  });
-
-  // Last 7 days chart data
-  const last7 = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const dateStr = d.toISOString().split('T')[0];
-    const entry = entries.find((e) => e.date === dateStr);
-    return {
-      day: d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1),
-      mood: entry ? (entry.mood as MoodLevel) : null,
-      isToday: i === 6,
-    };
   });
 
   // Average mood
@@ -130,10 +117,10 @@ export default function InsightsScreen() {
           </View>
         </View>
 
-        {/* This Week */}
+        {/* Mood Over Time */}
         <View style={styles.card}>
-          <SectionHeader title="This Week" />
-          <WeekMoodChart data={last7} />
+          <SectionHeader title="Mood Over Time" />
+          <MoodAreaChart entries={entries} />
         </View>
 
         {/* Mood Distribution */}
