@@ -22,7 +22,7 @@ const MoodContext = createContext<MoodContextType | undefined>(undefined);
 
 function generateMockEntries(): MoodEntry[] {
   const entries: MoodEntry[] = [];
-  const moods: MoodLevel[] = [5, 4, 4, 3, 5, 4, 3, 2, 4, 5, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 2, 3, 4, 5, 4, 3, 4, 5, 4];
+  const moods: MoodLevel[] = [6, 5, 4, 3, 6, 5, 3, 2, 5, 6, 3, 4, 6, 5, 3, 6, 4, 5, 3, 6, 5, 2, 3, 4, 6, 5, 3, 4, 6, 5];
   const notes = [
     'Had a great morning workout!',
     'Productive day at work.',

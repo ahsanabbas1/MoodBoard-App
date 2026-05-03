@@ -81,7 +81,7 @@ export default function EntryDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Mood Level</Text>
           <View style={styles.moodScale}>
-            {[1, 2, 3, 4, 5].map((level) => (
+            {[1, 2, 3, 4, 5, 6].map((level) => (
               <View
                 key={level}
                 style={[
@@ -95,7 +95,7 @@ export default function EntryDetailScreen() {
             ))}
           </View>
           <Text style={[styles.moodLevelText, { color: config.color }]}>
-            {entry.mood}/5 — {config.label}
+            {entry.mood}/6 — {config.label}
           </Text>
         </View>
 

@@ -5,15 +5,13 @@ import { useMood } from '../../store/MoodContext';
 import { MOODS, getMoodConfig } from '../../constants/Moods';
 import { MoodLevel } from '../../types';
 import WeekMoodChart from '../../components/WeekMoodChart';
-import MoodDistributionBar from '../../components/MoodDistributionBar';
+import MoodDistributionPie from '../../components/MoodDistributionPie';
 import SectionHeader from '../../components/SectionHeader';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function InsightsScreen() {
   const { entries, getAverageMood, getStreak } = useMood();
-
-  const now = new Date();
 
   // Last 30 days data
   const last30 = entries.filter((e) => {
@@ -142,7 +140,7 @@ export default function InsightsScreen() {
         <View style={styles.card}>
           <SectionHeader title="Mood Distribution (30 days)" />
           {last30.length > 0 ? (
-            <MoodDistributionBar entries={last30} />
+            <MoodDistributionPie entries={last30} />
           ) : (
             <Text style={styles.noData}>Not enough data yet</Text>
           )}

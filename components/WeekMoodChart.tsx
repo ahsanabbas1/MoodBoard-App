@@ -20,7 +20,7 @@ export default function WeekMoodChart({ data }: Props) {
     <View style={styles.container}>
       {data.map((item, idx) => {
         const config = item.mood ? getMoodConfig(item.mood) : null;
-        const barHeight = item.mood ? (item.mood / 5) * maxHeight : 0;
+        const barHeight = item.mood ? (item.mood / 6) * maxHeight : 0;
 
         return (
           <View key={idx} style={styles.dayCol}>

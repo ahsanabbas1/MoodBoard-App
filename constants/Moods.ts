@@ -2,24 +2,32 @@ import { MoodConfig, MoodLevel } from '../types';
 
 export const MOODS: MoodConfig[] = [
   {
-    level: 5,
+    level: 6,
     label: 'Amazing',
-    emoji: '😄',
+    emoji: '🤩',
     color: '#10B981',
     bgColor: '#ECFDF5',
     gradientColors: ['#10B981', '#34D399'],
   },
   {
-    level: 4,
-    label: 'Good',
-    emoji: '😊',
+    level: 5,
+    label: 'Happy',
+    emoji: '😄',
     color: '#3B82F6',
     bgColor: '#EFF6FF',
     gradientColors: ['#3B82F6', '#60A5FA'],
   },
   {
+    level: 4,
+    label: 'Good',
+    emoji: '😊',
+    color: '#8B5CF6',
+    bgColor: '#F5F3FF',
+    gradientColors: ['#8B5CF6', '#A78BFA'],
+  },
+  {
     level: 3,
-    label: 'Okay',
+    label: 'Neutral',
     emoji: '😐',
     color: '#F59E0B',
     bgColor: '#FFFBEB',
@@ -27,7 +35,7 @@ export const MOODS: MoodConfig[] = [
   },
   {
     level: 2,
-    label: 'Low',
+    label: 'Sad',
     emoji: '😔',
     color: '#F97316',
     bgColor: '#FFF7ED',
@@ -35,7 +43,7 @@ export const MOODS: MoodConfig[] = [
   },
   {
     level: 1,
-    label: 'Awful',
+    label: 'Very Sad',
     emoji: '😢',
     color: '#EF4444',
     bgColor: '#FEF2F2',
