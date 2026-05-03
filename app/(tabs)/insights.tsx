@@ -1,40 +1,60 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
 import { useMood } from '../../store/MoodContext';
 import { MOODS, getMoodConfig } from '../../constants/Moods';
 import { MoodLevel } from '../../types';
-import MoodAreaChart from '../../components/MoodAreaChart';
+import MoodAreaChart, { Period, filterEntriesByPeriod } from '../../components/MoodAreaChart';
 import MoodDistributionPie from '../../components/MoodDistributionPie';
 import SectionHeader from '../../components/SectionHeader';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+function periodLabel(period: Period, offset: number): string {
+  const now = new Date();
+  if (period === 'monthly') {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    return offset === 0 ? 'this month' : `in ${d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+  }
+  if (period === 'weekly') {
+    if (offset === 0) return 'this week';
+    if (offset === -1) return 'last week';
+    return `${Math.abs(offset)} weeks ago`;
+  }
+  const year = now.getFullYear() + offset;
+  return offset === 0 ? `in ${year}` : `in ${year}`;
+}
+
 export default function InsightsScreen() {
   const { entries, getAverageMood, getStreak } = useMood();
 
-  // Last 30 days data
-  const last30 = entries.filter((e) => {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    return e.date >= cutoff.toISOString().split('T')[0];
+  const [chartPeriod, setChartPeriod] = useState<Period>('monthly');
+  const [chartOffsets, setChartOffsets] = useState<Record<Period, number>>({
+    overview: 0,
+    weekly: 0,
+    monthly: 0,
+    yearly: 0,
   });
 
-  // Average mood
+  const currentOffset = chartOffsets[chartPeriod];
+  const filteredEntries = filterEntriesByPeriod(entries, chartPeriod, currentOffset);
+
+  // Global summary stats (always reflect full history)
   const avg7 = getAverageMood(7);
   const avg30 = getAverageMood(30);
   const streak = getStreak();
 
-  // Most common mood
+  // Most common mood — dynamic
   const moodCounts = MOODS.map((m) => ({
     ...m,
-    count: last30.filter((e) => e.mood === m.level).length,
+    count: filteredEntries.filter((e) => e.mood === m.level).length,
   })).sort((a, b) => b.count - a.count);
   const topMood = moodCounts[0];
 
-  // Best / worst day of week
+  // Best / worst day of week — dynamic
   const dayStats: Record<number, number[]> = {};
-  last30.forEach((e) => {
+  filteredEntries.forEach((e) => {
     const day = new Date(e.date + 'T12:00:00').getDay();
     if (!dayStats[day]) dayStats[day] = [];
     dayStats[day].push(e.mood);
@@ -49,9 +69,9 @@ export default function InsightsScreen() {
   const bestDay = dayAverages[0];
   const worstDay = dayAverages[dayAverages.length - 1];
 
-  // Most common tags
+  // Top tags — dynamic
   const tagCounts: Record<string, number> = {};
-  last30.forEach((e) => {
+  filteredEntries.forEach((e) => {
     e.tags.forEach((t) => {
       tagCounts[t] = (tagCounts[t] ?? 0) + 1;
     });
@@ -60,21 +80,7 @@ export default function InsightsScreen() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6);
 
-  // Monthly bar chart (last 4 weeks daily avg by week)
-  const weeklyAvg = Array.from({ length: 4 }, (_, wi) => {
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - (3 - wi) * 7 - 6);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    const weekEntries = last30.filter((e) => {
-      return e.date >= weekStart.toISOString().split('T')[0] &&
-        e.date <= weekEnd.toISOString().split('T')[0];
-    });
-    const avg = weekEntries.length
-      ? weekEntries.reduce((s, e) => s + e.mood, 0) / weekEntries.length
-      : 0;
-    return { label: `W${wi + 1}`, avg, count: weekEntries.length };
-  });
+  const pLabel = periodLabel(chartPeriod, currentOffset);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -85,7 +91,7 @@ export default function InsightsScreen() {
       >
         <Text style={styles.title}>Insights</Text>
 
-        {/* Summary Cards */}
+        {/* Summary Cards — global stats */}
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryEmoji}>📊</Text>
@@ -111,58 +117,35 @@ export default function InsightsScreen() {
           <View style={styles.summaryCard}>
             <Text style={styles.summaryEmoji}>📝</Text>
             <Text style={[styles.summaryValue, { fontSize: 22, color: Colors.primary }]}>
-              {last30.length}
+              {filteredEntries.length}
             </Text>
-            <Text style={styles.summaryLabel}>This month</Text>
+            <Text style={styles.summaryLabel} numberOfLines={1}>{pLabel}</Text>
           </View>
         </View>
 
         {/* Mood Over Time */}
         <View style={styles.card}>
           <SectionHeader title="Mood Over Time" />
-          <MoodAreaChart entries={entries} />
+          <MoodAreaChart
+            entries={entries}
+            period={chartPeriod}
+            offsets={chartOffsets}
+            onPeriodChange={(p) => setChartPeriod(p)}
+            onOffsetChange={(p, o) => setChartOffsets((prev) => ({ ...prev, [p]: o }))}
+          />
         </View>
 
-        {/* Mood Distribution */}
+        {/* Mood Distribution — dynamic */}
         <View style={styles.card}>
-          <SectionHeader title="Mood Distribution (30 days)" />
-          {last30.length > 0 ? (
-            <MoodDistributionPie entries={last30} />
+          <SectionHeader title="Mood Distribution" />
+          {filteredEntries.length > 0 ? (
+            <MoodDistributionPie entries={filteredEntries} />
           ) : (
-            <Text style={styles.noData}>Not enough data yet</Text>
+            <Text style={styles.noData}>No data for this period</Text>
           )}
         </View>
 
-        {/* Weekly Trend */}
-        <View style={styles.card}>
-          <SectionHeader title="Weekly Trend" />
-          <View style={styles.weeklyBars}>
-            {weeklyAvg.map((w, i) => {
-              const barH = w.avg > 0 ? (w.avg / 5) * 80 : 4;
-              const config = w.avg > 0 ? getMoodConfig(Math.round(w.avg) as MoodLevel) : null;
-              return (
-                <View key={i} style={styles.weeklyBarCol}>
-                  {config && <Text style={styles.weeklyEmoji}>{config.emoji}</Text>}
-                  <View style={styles.weeklyBarTrack}>
-                    <View
-                      style={[
-                        styles.weeklyBar,
-                        {
-                          height: barH,
-                          backgroundColor: config ? config.color : Colors.border,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.weeklyLabel}>{w.label}</Text>
-                  <Text style={styles.weeklyCount}>{w.count}d</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Most Common Mood */}
+        {/* Most Common Mood — dynamic */}
         {topMood && topMood.count > 0 && (
           <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: topMood.color }]}>
             <Text style={styles.insightLabel}>Most Common Mood</Text>
@@ -171,23 +154,23 @@ export default function InsightsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.insightValue, { color: topMood.color }]}>{topMood.label}</Text>
                 <Text style={styles.insightSub}>
-                  {topMood.count} out of {last30.length} entries this month
+                  {topMood.count} of {filteredEntries.length} entries {pLabel}
                 </Text>
               </View>
             </View>
           </View>
         )}
 
-        {/* Best / Worst Day */}
+        {/* Best / Tough Day — dynamic */}
         {bestDay && worstDay && bestDay.day !== worstDay.day && (
           <View style={styles.dayRow}>
-            <View style={[styles.dayCard, { borderColor: getMoodConfig(5).color }]}>
+            <View style={[styles.dayCard, { borderColor: getMoodConfig(6).color }]}>
               <Text style={styles.dayCardIcon}>😄</Text>
               <Text style={styles.dayCardTitle}>Best Day</Text>
-              <Text style={[styles.dayCardValue, { color: getMoodConfig(5).color }]}>
+              <Text style={[styles.dayCardValue, { color: getMoodConfig(6).color }]}>
                 {DAY_NAMES[bestDay.day]}
               </Text>
-              <Text style={styles.dayCardSub}>avg {bestDay.avg.toFixed(1)}/5</Text>
+              <Text style={styles.dayCardSub}>avg {bestDay.avg.toFixed(1)}/6</Text>
             </View>
             <View style={[styles.dayCard, { borderColor: getMoodConfig(1).color }]}>
               <Text style={styles.dayCardIcon}>😔</Text>
@@ -195,12 +178,12 @@ export default function InsightsScreen() {
               <Text style={[styles.dayCardValue, { color: getMoodConfig(1).color }]}>
                 {DAY_NAMES[worstDay.day]}
               </Text>
-              <Text style={styles.dayCardSub}>avg {worstDay.avg.toFixed(1)}/5</Text>
+              <Text style={styles.dayCardSub}>avg {worstDay.avg.toFixed(1)}/6</Text>
             </View>
           </View>
         )}
 
-        {/* Top Tags */}
+        {/* Top Influences — dynamic */}
         {topTags.length > 0 && (
           <View style={styles.card}>
             <SectionHeader title="Top Influences" />
@@ -265,21 +248,6 @@ const styles = StyleSheet.create({
   },
 
   noData: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', paddingVertical: 8 },
-
-  weeklyBars: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', gap: 8 },
-  weeklyBarCol: { flex: 1, alignItems: 'center', gap: 4 },
-  weeklyEmoji: { fontSize: 16 },
-  weeklyBarTrack: {
-    width: 40,
-    height: 80,
-    backgroundColor: Colors.border,
-    borderRadius: 10,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  weeklyBar: { width: '100%', borderRadius: 10, minHeight: 4 },
-  weeklyLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
-  weeklyCount: { fontSize: 10, color: Colors.textMuted },
 
   insightLabel: { fontSize: 13, color: Colors.textMuted, fontWeight: '500' },
   insightRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
