@@ -1,5 +1,7 @@
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
 import { useMood } from '../../store/MoodContext';
@@ -199,6 +201,100 @@ export default function InsightsScreen() {
             </View>
           </View>
         )}
+
+        {/* AI Insights */}
+        <View style={styles.aiSection}>
+          <View style={styles.aiHeaderRow}>
+            <LinearGradient
+              colors={['#7C6FFF', '#A78BFA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.aiIconBadge}
+            >
+              <Ionicons name="sparkles" size={14} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.aiSectionTitle}>AI Insights</Text>
+            <View style={styles.aiBetaBadge}>
+              <Text style={styles.aiBetaText}>Beta</Text>
+            </View>
+          </View>
+
+          {/* Insight 1 */}
+          <LinearGradient
+            colors={['#EEF0FF', '#F5F3FF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.aiCard}
+          >
+            <View style={styles.aiCardIcon}>
+              <Ionicons name="trending-up" size={18} color={Colors.primary} />
+            </View>
+            <View style={styles.aiCardBody}>
+              <Text style={styles.aiCardTitle}>Mood peaks mid-week</Text>
+              <Text style={styles.aiCardText}>
+                Your mood is consistently higher on Wednesdays and Thursdays. Consider scheduling important tasks or social plans on these days.
+              </Text>
+            </View>
+          </LinearGradient>
+
+          {/* Insight 2 */}
+          <LinearGradient
+            colors={['#ECFDF5', '#D1FAE5']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.aiCard}
+          >
+            <View style={[styles.aiCardIcon, { backgroundColor: '#A7F3D0' }]}>
+              <Ionicons name="fitness" size={18} color="#10B981" />
+            </View>
+            <View style={styles.aiCardBody}>
+              <Text style={[styles.aiCardTitle, { color: '#065F46' }]}>Exercise boosts your mood</Text>
+              <Text style={styles.aiCardText}>
+                Entries tagged with Exercise show an average mood score 1.4 points higher than your baseline. Keep up the activity!
+              </Text>
+            </View>
+          </LinearGradient>
+
+          {/* Insight 3 */}
+          <LinearGradient
+            colors={['#FFF7ED', '#FFEDD5']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.aiCard}
+          >
+            <View style={[styles.aiCardIcon, { backgroundColor: '#FED7AA' }]}>
+              <Ionicons name="moon" size={18} color="#F97316" />
+            </View>
+            <View style={styles.aiCardBody}>
+              <Text style={[styles.aiCardTitle, { color: '#7C2D12' }]}>Sleep affects your score</Text>
+              <Text style={styles.aiCardText}>
+                Days tagged with Sleep problems correlate with a 28% drop in your mood score. Prioritising rest could improve your overall wellbeing.
+              </Text>
+            </View>
+          </LinearGradient>
+
+          {/* Insight 4 */}
+          <LinearGradient
+            colors={['#EFF6FF', '#DBEAFE']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.aiCard}
+          >
+            <View style={[styles.aiCardIcon, { backgroundColor: '#BFDBFE' }]}>
+              <Ionicons name="people" size={18} color="#3B82F6" />
+            </View>
+            <View style={styles.aiCardBody}>
+              <Text style={[styles.aiCardTitle, { color: '#1E3A5F' }]}>Social time matters</Text>
+              <Text style={styles.aiCardText}>
+                Entries with Friends or Family tags average 0.9 points above your monthly average. Social connection is a key mood driver for you.
+              </Text>
+            </View>
+          </LinearGradient>
+
+          <Text style={styles.aiDisclaimer}>
+            AI insights are generated from your personal mood data patterns. Dynamic analysis coming soon.
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -284,4 +380,62 @@ const styles = StyleSheet.create({
   },
   tagBadgeText: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
   tagCount: { fontSize: 12, color: Colors.textMuted, fontWeight: '500' },
+
+  // AI Insights
+  aiSection: { gap: 12 },
+  aiHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiSectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  aiBetaBadge: {
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 99,
+  },
+  aiBetaText: { fontSize: 10, fontWeight: '700', color: Colors.primary },
+  aiCard: {
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  aiCardIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  aiCardBody: { flex: 1, gap: 4 },
+  aiCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  aiCardText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  aiDisclaimer: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingHorizontal: 8,
+  },
 });
