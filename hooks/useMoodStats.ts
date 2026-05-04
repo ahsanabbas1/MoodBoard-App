@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useMood } from '../store/MoodContext';
 import { MoodLevel } from '../types';
 import { getMoodConfig } from '../constants/Moods';
+import { toDateString } from '../utils/date';
 
 export function useMoodStats() {
   const { entries, getStreak, getAverageMood } = useMood();
@@ -16,7 +17,7 @@ export function useMoodStats() {
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (6 - i));
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toDateString(d);   // local date
       const entry = entries.find((e) => e.date === dateStr);
       return {
         day: d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1),

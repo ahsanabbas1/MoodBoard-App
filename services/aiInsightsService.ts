@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MoodEntry } from "../types";
 import { MOODS } from "../constants/Moods";
+import { toDateString } from "../utils/date";
 
 // ---------------------------------------------------------------------------
 // Replace with your deployed Vercel URL (or ngrok during development)
@@ -173,7 +174,7 @@ function computeStreak(entries: MoodEntry[]): number {
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
+    const dateStr = toDateString(d);   // local date
     if (entries.some(e => e.date === dateStr)) streak++;
     else break;
   }

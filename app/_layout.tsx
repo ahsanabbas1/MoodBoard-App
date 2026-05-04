@@ -5,6 +5,8 @@ import { MoodProvider } from '../store/MoodContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../store/AuthContext';
 import { useEffect } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Colors } from '../constants/Colors';
 
 function NavigationGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -14,17 +16,40 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup = segments[0] === '(tabs)';
+    const inTabsGroup  = segments[0] === '(tabs)';
+    const onLoginScreen = segments[0] === 'login';
+    // segments[0] is undefined on the very first render before Expo Router
+    // has resolved the initial route — treat that as "not yet settled"
+    const routeSettled = segments.length > 0;
 
-    if (!user && inAuthGroup) {
+    if (!user && (inTabsGroup || !routeSettled)) {
       router.replace('/login');
-    } else if (user && segments[0] === 'login') {
+    } else if (user && (onLoginScreen || !routeSettled)) {
       router.replace('/(tabs)');
     }
   }, [user, loading, segments]);
 
+  // Block rendering entirely while the session check is in flight.
+  // This prevents any flash of the wrong screen.
+  if (loading) {
+    return (
+      <View style={splashStyles.container}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
   return <>{children}</>;
 }
+
+const splashStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F7FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 export default function RootLayout() {
   return (

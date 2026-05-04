@@ -108,8 +108,8 @@ export default function HistoryScreen() {
       );
     }
 
-    const weekStart = weekDays[0].toISOString().split("T")[0];
-    const weekEnd = weekDays[6].toISOString().split("T")[0];
+    const weekStart = toDateStr(weekDays[0]);   // local date
+    const weekEnd   = toDateStr(weekDays[6]);   // local date
     return entry.date >= weekStart && entry.date <= weekEnd;
   });
 

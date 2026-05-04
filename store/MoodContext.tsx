@@ -3,6 +3,7 @@ import { MoodEntry, MoodLevel } from '../types';
 import * as db from './database';
 import { useAuth } from './AuthContext';
 import { getMoodConfig } from '../constants/Moods';
+import { toDateString } from '../utils/date';
 
 interface MoodContextType {
   entries: MoodEntry[];
@@ -51,7 +52,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
     const now = new Date();
     const newEntry: MoodEntry = {
       id: `entry_${Date.now()}`,
-      date: now.toISOString().split('T')[0],
+      date: toDateString(now),   // local date, not UTC
       time: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
       mood,
       intensity,
@@ -81,7 +82,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
   }
 
   function getTodayEntry() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toDateString();   // local date
     return entries.find((e) => e.date === today);
   }
 
@@ -99,7 +100,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toDateString(d);   // local date
       if (entries.some((e) => e.date === dateStr)) {
         streak++;
       } else {
@@ -112,7 +113,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
   function getAverageMood(days = 7) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const cutoffStr = toDateString(cutoff);   // local date
     const recent = entries.filter((e) => e.date >= cutoffStr);
     if (recent.length === 0) return 0;
     return recent.reduce((sum, e) => sum + e.mood, 0) / recent.length;

@@ -25,8 +25,9 @@ import { MoodLevel } from "../../types";
 import debounce from "lodash.debounce";
 
 const { width } = Dimensions.get("window");
-const CHART_WIDTH = width - 110;
-const CHART_HEIGHT = 130;
+const CHART_WIDTH  = width - 76;   // wider — only yAxis (28px) + padding
+const CHART_HEIGHT = 200;           // taller so lines are clearly visible
+const CHART_PAD    = 10;            // top/bottom padding so dots at extremes aren't clipped
 
 const MEMBER_COLORS = [
   "#7C3AED",
@@ -74,8 +75,9 @@ const getInitials = (m: CircleMember) => {
     : name.slice(0, 2).toUpperCase();
 };
 
+// Maps mood level to Y coordinate with top/bottom padding so dots never clip
 const getMoodY = (level: MoodLevel) =>
-  CHART_HEIGHT - ((level - 1) / 5) * CHART_HEIGHT;
+  CHART_PAD + ((5 - (level - 1)) / 5) * (CHART_HEIGHT - 2 * CHART_PAD);
 
 const toDateStr = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -138,10 +140,11 @@ const buildDateEntries = (period: ChartPeriod): DateEntry[] => {
 
 // ── persistence keys ───────────────────────────────────────────────────────────
 
-const SK_FAMILY      = "circle_family_v4";
-const SK_FRIENDS     = "circle_friends_v4";
-const SK_SHARE_MOOD  = "privacy_share_mood";
-const SK_SHARE_NOTES = "privacy_share_notes";
+// Keys are per-user so data is isolated between accounts and survives logout/login
+const skFamily    = (uid: string) => `circle_family_v5_${uid}`;
+const skFriends   = (uid: string) => `circle_friends_v5_${uid}`;
+const skShareMood  = (uid: string) => `privacy_share_mood_${uid}`;
+const skShareNotes = (uid: string) => `privacy_share_notes_${uid}`;
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -191,15 +194,19 @@ export default function FamilyFriendsScreen() {
     setMoodData((prev) => ({ ...prev, [adminMember.id!]: adminMoodStore }));
   }, [adminMoodStore, adminMember.id]);
 
-  // ── load persisted state on mount ─────────────────────────────────────────────
+  // ── load persisted state — re-runs whenever the logged-in user changes ──────────
+  // Keys are per-user so data survives logout/login and is isolated between accounts.
   useEffect(() => {
+    if (!adminMember.id || adminMember.id === "you") return; // wait for real user ID
+    readyToSaveRef.current = false; // block saves while we're loading
+    const uid = adminMember.id;
     (async () => {
       try {
         const [fam, fri, sm, sn] = await Promise.all([
-          AsyncStorage.getItem(SK_FAMILY),
-          AsyncStorage.getItem(SK_FRIENDS),
-          AsyncStorage.getItem(SK_SHARE_MOOD),
-          AsyncStorage.getItem(SK_SHARE_NOTES),
+          AsyncStorage.getItem(skFamily(uid)),
+          AsyncStorage.getItem(skFriends(uid)),
+          AsyncStorage.getItem(skShareMood(uid)),
+          AsyncStorage.getItem(skShareNotes(uid)),
         ]);
         if (fam) {
           const parsed: CircleMember[] = JSON.parse(fam);
@@ -212,40 +219,35 @@ export default function FamilyFriendsScreen() {
         if (sm !== null) setShareMood(JSON.parse(sm));
         if (sn !== null) setShareNotes(JSON.parse(sn));
       } catch {}
-      // Set the ref AFTER all setState calls so persist effects never fire
-      // with the initial empty state — they only fire on real user actions.
       readyToSaveRef.current = true;
     })();
-  }, []);
+  }, [adminMember.id]); // re-run when the user changes (login/logout)
 
-  // ── keep admin profile current in both lists ───────────────────────────────────
+  // ── keep admin profile name/avatar current in both lists ──────────────────────
   useEffect(() => {
     setFamilyMembers((prev) => prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)));
     setFriendMembers((prev) => prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)));
-  }, [adminMember.id, adminMember.name]);
+  }, [adminMember.name]);
 
-  // ── persist circle members & privacy settings ──────────────────────────────────
-  // readyToSaveRef is a ref, not state, so changing it never triggers these effects.
-  // They only fire when the actual data changes (familyMembers, friendMembers, etc.),
-  // which only happens from real user actions — never from the initial load.
+  // ── persist — only fire after load completes, keyed to the current user ────────
   useEffect(() => {
-    if (!readyToSaveRef.current) return;
-    AsyncStorage.setItem(SK_FAMILY, JSON.stringify(familyMembers)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
+    AsyncStorage.setItem(skFamily(adminMember.id), JSON.stringify(familyMembers)).catch(() => {});
   }, [familyMembers]);
 
   useEffect(() => {
-    if (!readyToSaveRef.current) return;
-    AsyncStorage.setItem(SK_FRIENDS, JSON.stringify(friendMembers)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
+    AsyncStorage.setItem(skFriends(adminMember.id), JSON.stringify(friendMembers)).catch(() => {});
   }, [friendMembers]);
 
   useEffect(() => {
-    if (!readyToSaveRef.current) return;
-    AsyncStorage.setItem(SK_SHARE_MOOD, JSON.stringify(shareMood)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
+    AsyncStorage.setItem(skShareMood(adminMember.id), JSON.stringify(shareMood)).catch(() => {});
   }, [shareMood]);
 
   useEffect(() => {
-    if (!readyToSaveRef.current) return;
-    AsyncStorage.setItem(SK_SHARE_NOTES, JSON.stringify(shareNotes)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
+    AsyncStorage.setItem(skShareNotes(adminMember.id), JSON.stringify(shareNotes)).catch(() => {});
   }, [shareNotes]);
 
   // ── derived ────────────────────────────────────────────────────────────────────
@@ -393,7 +395,7 @@ export default function FamilyFriendsScreen() {
               key={`ln-${member.id}-${i}`}
               x1={prev.x.toString()} y1={prev.y.toString()}
               x2={pt.x.toString()}  y2={pt.y.toString()}
-              stroke={color} strokeWidth="2"
+              stroke={color} strokeWidth="2.5"
             />
           );
         })}
@@ -402,7 +404,7 @@ export default function FamilyFriendsScreen() {
             <Circle
               key={`dot-${member.id}-${i}`}
               cx={pt.x.toString()} cy={pt.y.toString()}
-              r="4" fill={color} stroke="#FFFFFF" strokeWidth="1.5"
+              r="5" fill={color} stroke="#FFFFFF" strokeWidth="2"
             />
           ) : null,
         )}
@@ -563,15 +565,45 @@ export default function FamilyFriendsScreen() {
           )}
         </View>
 
-        {/* AI insight */}
-        <View style={styles.aiCard}>
-          <Text style={styles.aiTitle}>AI Assistant</Text>
-          <Text style={styles.aiBody}>
-            {activeTab === "family"
-              ? `Family AI Insight: ${adminMember.name?.replace(" (You)", "") || "You"}'s mood is being tracked. Check in with your family regularly!`
-              : "Friends AI Insight: No dull moments! Your friends are feeling positive and energetic."}
-          </Text>
-        </View>
+        {/* AI insight — derived from real moodData */}
+        {(() => {
+          const peers = currentMembers.filter((m) => !m.isYou);
+          const label = activeTab === "family" ? "Family" : "Friends";
+
+          // Collect today's moods for all members
+          const todayMoods = currentMembers
+            .map((m) => ({ name: getMemberName(m).replace(" (You)", ""), mood: moodData[m.id || ""]?.[todayStr] }))
+            .filter((x) => x.mood !== undefined) as { name: string; mood: MoodLevel }[];
+
+          const moodEmojiMap: Record<MoodLevel, string> = moodEmojiByLevel;
+
+          let insight = "";
+          if (todayMoods.length === 0) {
+            insight = peers.length === 0
+              ? `Add ${label.toLowerCase()} members to compare moods and see insights here.`
+              : `No moods logged yet today. Check back after your ${label.toLowerCase()} have tracked their day.`;
+          } else {
+            const avg = todayMoods.reduce((s, x) => s + x.mood, 0) / todayMoods.length;
+            const avgRounded = Math.round(avg) as MoodLevel;
+            const topMember = [...todayMoods].sort((a, b) => b.mood - a.mood)[0];
+            const lowMember = [...todayMoods].sort((a, b) => a.mood - b.mood)[0];
+            const emoji = moodEmojiMap[avgRounded];
+            if (todayMoods.length === 1) {
+              insight = `${topMember.name} is feeling ${moodEmojiMap[topMember.mood]} today. Keep the connection going — a quick message goes a long way!`;
+            } else if (topMember.mood === lowMember.mood) {
+              insight = `Everyone in your ${label.toLowerCase()} circle is feeling ${emoji} today. Great synchrony!`;
+            } else {
+              insight = `${label} avg mood today is ${emoji}. ${topMember.name} is the brightest ${moodEmojiMap[topMember.mood as MoodLevel]} — maybe check in with ${lowMember.name} ${moodEmojiMap[lowMember.mood as MoodLevel]}.`;
+            }
+          }
+
+          return (
+            <View style={styles.aiCard}>
+              <Text style={styles.aiTitle}>✨ {label} Insight</Text>
+              <Text style={styles.aiBody}>{insight}</Text>
+            </View>
+          );
+        })()}
 
         {/* Member cards */}
         <View style={styles.memberSection}>
@@ -723,6 +755,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 14,
+    paddingBottom: 18,
     ...Platform.select({
       ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
       android: { elevation: 2 },
@@ -741,8 +774,8 @@ const styles = StyleSheet.create({
   periodButtonTextActive: { color: Colors.primary },
   emptyChart: { textAlign: "center", color: Colors.textMuted, fontSize: 13, paddingVertical: 30 },
   chartBody:  { flexDirection: "row", alignItems: "flex-start" },
-  yAxis: { justifyContent: "space-between", paddingRight: 6, width: 28 },
-  yEmojiLabel: { fontSize: 14, textAlign: "center" },
+  yAxis: { justifyContent: "space-between", paddingRight: 6, width: 30 },
+  yEmojiLabel: { fontSize: 15, textAlign: "center" },
   xAxis: { flexDirection: "row", justifyContent: "space-between", marginTop: 6, paddingHorizontal: 2 },
   xDateLabel: { fontSize: 9, color: Colors.textSecondary, textAlign: "center" },
 

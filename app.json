@@ -37,6 +37,13 @@
     "scheme": "moodboard",
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b60c2f4e-85e7-47c3-8657-b925efeb96d6"
+      }
+    },
+    "owner": "ahsanabbas"
   }
 }

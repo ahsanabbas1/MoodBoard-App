@@ -129,6 +129,8 @@ export default function LogScreen() {
                       styles.moodLabel,
                       { color: isSelected ? mood.color : Colors.textSecondary },
                     ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
                   >
                     {mood.label}
                   </Text>
@@ -299,8 +301,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     opacity: 0.1,
   },
-  moodEmoji: { fontSize: 30 },
-  moodLabel: { fontSize: 11, fontWeight: "600", textAlign: "center" },
+  moodEmoji: { fontSize: 26 },
+  moodLabel: { fontSize: 10, fontWeight: "600", textAlign: "center", lineHeight: 13 },
   checkmark: {
     position: "absolute",
     top: 6,

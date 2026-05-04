@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet, LayoutChangeEvent } from 'react-native';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import { toDateString } from '../utils/date';
 import Svg, {
   Path,
   Circle,
@@ -75,8 +76,8 @@ function getWeekBounds(offset: number): { startStr: string; endStr: string; star
   sunday.setDate(monday.getDate() + 6);
   return {
     startDate: monday,
-    startStr: monday.toISOString().split('T')[0],
-    endStr: sunday.toISOString().split('T')[0],
+    startStr: toDateString(monday),   // local date
+    endStr:   toDateString(sunday),   // local date
   };
 }
 
@@ -145,7 +146,7 @@ function getData(entries: MoodEntry[], period: Period, offset: number): DataPoin
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(startDate);
       d.setDate(startDate.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toDateString(d);   // local date
       const dayEntries = entries.filter((e) => e.date === dateStr);
       return {
         label: d.toLocaleDateString('en-US', { weekday: 'short' }),

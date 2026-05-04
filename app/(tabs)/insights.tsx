@@ -68,16 +68,16 @@ export default function InsightsScreen() {
   const avg30 = getAverageMood(30);
   const streak = getStreak();
 
-  // Most common mood — dynamic
+  // Most common mood — from FULL history so it always has a meaningful value
   const moodCounts = MOODS.map((m) => ({
     ...m,
-    count: filteredEntries.filter((e) => e.mood === m.level).length,
+    count: entries.filter((e) => e.mood === m.level).length,
   })).sort((a, b) => b.count - a.count);
-  const topMood = moodCounts[0];
+  const topMood = moodCounts[0]?.count > 0 ? moodCounts[0] : null;
 
-  // Best / worst day of week — dynamic
+  // Best / worst day of week — from FULL history (needs enough data across days)
   const dayStats: Record<number, number[]> = {};
-  filteredEntries.forEach((e) => {
+  entries.forEach((e) => {
     const day = new Date(e.date + 'T12:00:00').getDay();
     if (!dayStats[day]) dayStats[day] = [];
     dayStats[day].push(e.mood);
@@ -86,11 +86,12 @@ export default function InsightsScreen() {
     .map(([day, moods]) => ({
       day: parseInt(day),
       avg: moods.reduce((s, m) => s + m, 0) / moods.length,
+      count: moods.length,
     }))
     .sort((a, b) => b.avg - a.avg);
 
-  const bestDay = dayAverages[0];
-  const worstDay = dayAverages[dayAverages.length - 1];
+  const bestDay  = dayAverages.length >= 2 ? dayAverages[0] : null;
+  const worstDay = dayAverages.length >= 2 ? dayAverages[dayAverages.length - 1] : null;
 
   // Top tags — dynamic
   const tagCounts: Record<string, number> = {};
@@ -190,8 +191,8 @@ export default function InsightsScreen() {
           )}
         </View>
 
-        {/* Most Common Mood — dynamic */}
-        {topMood && topMood.count > 0 && (
+        {/* Most Common Mood — from full history */}
+        {topMood && (
           <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: topMood.color }]}>
             <Text style={styles.insightLabel}>Most Common Mood</Text>
             <View style={styles.insightRow}>
@@ -199,14 +200,14 @@ export default function InsightsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.insightValue, { color: topMood.color }]}>{topMood.label}</Text>
                 <Text style={styles.insightSub}>
-                  {topMood.count} of {filteredEntries.length} entries {pLabel}
+                  {topMood.count} of {entries.length} total entries
                 </Text>
               </View>
             </View>
           </View>
         )}
 
-        {/* Best / Tough Day — dynamic */}
+        {/* Best / Tough Day — from full history, needs data on at least 2 different days */}
         {bestDay && worstDay && bestDay.day !== worstDay.day && (
           <View style={styles.dayRow}>
             <View style={[styles.dayCard, { borderColor: getMoodConfig(6).color }]}>
