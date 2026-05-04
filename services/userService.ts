@@ -37,3 +37,21 @@ export async function getFamilyCircle(userId: string): Promise<UserProfile[]> {
   // For now, returning mock data to maintain UI
   return [];
 }
+
+/**
+ * Fetches a single member's current mood emoji from their online profile.
+ * Returns null if the member has no mood recorded or is offline.
+ */
+export async function fetchMemberCurrentMoodEmoji(memberId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('current_mood_emoji')
+      .eq('id', memberId)
+      .single();
+    if (error || !data) return null;
+    return data.current_mood_emoji ?? null;
+  } catch {
+    return null;
+  }
+}

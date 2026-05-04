@@ -1,5 +1,5 @@
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { MoodLevel } from '../../types';
 import MoodAreaChart, { Period, filterEntriesByPeriod } from '../../components/MoodAreaChart';
 import MoodDistributionPie from '../../components/MoodDistributionPie';
 import SectionHeader from '../../components/SectionHeader';
+import { fetchAIInsights, InsightsResult, InsightCategory } from '../../services/aiInsightsService';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -27,6 +28,26 @@ function periodLabel(period: Period, offset: number): string {
   const year = now.getFullYear() + offset;
   return offset === 0 ? `in ${year}` : `in ${year}`;
 }
+
+// Gradient colours per insight category
+const CATEGORY_GRADIENTS: Record<InsightCategory, [string, string]> = {
+  achievement: ['#ECFDF5', '#D1FAE5'],
+  pattern:     ['#EEF0FF', '#F5F3FF'],
+  suggestion:  ['#EFF6FF', '#DBEAFE'],
+  warning:     ['#FFF7ED', '#FFEDD5'],
+};
+const CATEGORY_ICON_BG: Record<InsightCategory, string> = {
+  achievement: '#A7F3D0',
+  pattern:     Colors.primaryLight,
+  suggestion:  '#BFDBFE',
+  warning:     '#FED7AA',
+};
+const CATEGORY_TEXT_COLOR: Record<InsightCategory, string> = {
+  achievement: '#065F46',
+  pattern:     Colors.textPrimary,
+  suggestion:  '#1E3A5F',
+  warning:     '#7C2D12',
+};
 
 export default function InsightsScreen() {
   const { entries, getAverageMood, getStreak } = useMood();
@@ -83,6 +104,28 @@ export default function InsightsScreen() {
     .slice(0, 6);
 
   const pLabel = periodLabel(chartPeriod, currentOffset);
+
+  // --- AI insights state ---
+  const [aiResult, setAiResult] = useState<InsightsResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const loadInsights = useCallback(async () => {
+    if (entries.length === 0) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await fetchAIInsights(entries);
+      setAiResult(result);
+    } catch {
+      setAiError('Unable to load insights. Tap to retry.');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [entries]);
+
+  // Load on mount and whenever the entry list grows
+  useEffect(() => { loadInsights(); }, [loadInsights]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -214,86 +257,73 @@ export default function InsightsScreen() {
               <Ionicons name="sparkles" size={14} color="#fff" />
             </LinearGradient>
             <Text style={styles.aiSectionTitle}>AI Insights</Text>
-            <View style={styles.aiBetaBadge}>
-              <Text style={styles.aiBetaText}>Beta</Text>
-            </View>
+            {aiResult?.fromCache && (
+              <View style={styles.aiBetaBadge}>
+                <Text style={styles.aiBetaText}>Cached</Text>
+              </View>
+            )}
+            <TouchableOpacity onPress={loadInsights} disabled={aiLoading} style={styles.aiRefreshBtn}>
+              {aiLoading
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : <Ionicons name="refresh" size={16} color={Colors.primary} />}
+            </TouchableOpacity>
           </View>
 
-          {/* Insight 1 */}
-          <LinearGradient
-            colors={['#EEF0FF', '#F5F3FF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.aiCard}
-          >
-            <View style={styles.aiCardIcon}>
-              <Ionicons name="trending-up" size={18} color={Colors.primary} />
+          {/* Summary */}
+          {aiResult && !aiLoading && (
+            <View style={styles.aiSummaryBox}>
+              <Text style={styles.aiSummaryText}>{aiResult.summary}</Text>
             </View>
-            <View style={styles.aiCardBody}>
-              <Text style={styles.aiCardTitle}>Mood peaks mid-week</Text>
-              <Text style={styles.aiCardText}>
-                Your mood is consistently higher on Wednesdays and Thursdays. Consider scheduling important tasks or social plans on these days.
-              </Text>
-            </View>
-          </LinearGradient>
+          )}
 
-          {/* Insight 2 */}
-          <LinearGradient
-            colors={['#ECFDF5', '#D1FAE5']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.aiCard}
-          >
-            <View style={[styles.aiCardIcon, { backgroundColor: '#A7F3D0' }]}>
-              <Ionicons name="fitness" size={18} color="#10B981" />
+          {/* Loading skeleton */}
+          {aiLoading && !aiResult && (
+            <View style={styles.aiLoadingBox}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.aiLoadingText}>Analysing your mood patterns…</Text>
             </View>
-            <View style={styles.aiCardBody}>
-              <Text style={[styles.aiCardTitle, { color: '#065F46' }]}>Exercise boosts your mood</Text>
-              <Text style={styles.aiCardText}>
-                Entries tagged with Exercise show an average mood score 1.4 points higher than your baseline. Keep up the activity!
-              </Text>
-            </View>
-          </LinearGradient>
+          )}
 
-          {/* Insight 3 */}
-          <LinearGradient
-            colors={['#FFF7ED', '#FFEDD5']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.aiCard}
-          >
-            <View style={[styles.aiCardIcon, { backgroundColor: '#FED7AA' }]}>
-              <Ionicons name="moon" size={18} color="#F97316" />
-            </View>
-            <View style={styles.aiCardBody}>
-              <Text style={[styles.aiCardTitle, { color: '#7C2D12' }]}>Sleep affects your score</Text>
-              <Text style={styles.aiCardText}>
-                Days tagged with Sleep problems correlate with a 28% drop in your mood score. Prioritising rest could improve your overall wellbeing.
-              </Text>
-            </View>
-          </LinearGradient>
+          {/* Error state */}
+          {aiError && !aiLoading && (
+            <TouchableOpacity style={styles.aiErrorBox} onPress={loadInsights}>
+              <Ionicons name="alert-circle-outline" size={20} color="#F97316" />
+              <Text style={styles.aiErrorText}>{aiError}</Text>
+            </TouchableOpacity>
+          )}
 
-          {/* Insight 4 */}
-          <LinearGradient
-            colors={['#EFF6FF', '#DBEAFE']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.aiCard}
-          >
-            <View style={[styles.aiCardIcon, { backgroundColor: '#BFDBFE' }]}>
-              <Ionicons name="people" size={18} color="#3B82F6" />
-            </View>
-            <View style={styles.aiCardBody}>
-              <Text style={[styles.aiCardTitle, { color: '#1E3A5F' }]}>Social time matters</Text>
-              <Text style={styles.aiCardText}>
-                Entries with Friends or Family tags average 0.9 points above your monthly average. Social connection is a key mood driver for you.
-              </Text>
-            </View>
-          </LinearGradient>
+          {/* No data */}
+          {!aiLoading && !aiError && entries.length === 0 && (
+            <Text style={styles.aiDisclaimer}>Log at least one mood entry to see your personalised insights.</Text>
+          )}
 
-          <Text style={styles.aiDisclaimer}>
-            AI insights are generated from your personal mood data patterns. Dynamic analysis coming soon.
-          </Text>
+          {/* Dynamic insight cards */}
+          {aiResult?.insights.map((insight, i) => (
+            <LinearGradient
+              key={i}
+              colors={CATEGORY_GRADIENTS[insight.category]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.aiCard}
+            >
+              <View style={[styles.aiCardIcon, { backgroundColor: CATEGORY_ICON_BG[insight.category] }]}>
+                <Text style={{ fontSize: 18 }}>{insight.emoji}</Text>
+              </View>
+              <View style={styles.aiCardBody}>
+                <Text style={[styles.aiCardTitle, { color: CATEGORY_TEXT_COLOR[insight.category] }]}>
+                  {insight.title}
+                </Text>
+                <Text style={styles.aiCardText}>{insight.body}</Text>
+              </View>
+            </LinearGradient>
+          ))}
+
+          {aiResult && (
+            <Text style={styles.aiDisclaimer}>
+              Based on your {Math.min(entries.length, 100)} most recent entries ·{' '}
+              {new Date(aiResult.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -430,6 +460,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     lineHeight: 18,
+  },
+  aiRefreshBtn: { padding: 4 },
+  aiSummaryBox: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 14,
+    padding: 14,
+  },
+  aiSummaryText: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  aiLoadingBox: {
+    alignItems: 'center',
+    paddingVertical: 28,
+    gap: 10,
+  },
+  aiLoadingText: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+  },
+  aiErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFF7ED',
+    borderRadius: 14,
+    padding: 14,
+  },
+  aiErrorText: {
+    fontSize: 13,
+    color: '#C2410C',
+    flex: 1,
   },
   aiDisclaimer: {
     fontSize: 11,

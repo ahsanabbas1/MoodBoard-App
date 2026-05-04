@@ -1,86 +1,442 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Platform, Dimensions, Image, TextInput } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../../constants/Colors';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Polyline, Circle, Line } from 'react-native-svg';
-import { useAuth } from '../../store/AuthContext';
-import { searchUsers } from '../../services/userService';
-import { UserProfile } from '../../types/auth';
-import debounce from 'lodash.debounce';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Switch,
+  Platform,
+  Dimensions,
+  TextInput,
+  Alert,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Colors } from "../../constants/Colors";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Circle, Line, G } from "react-native-svg";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "../../store/AuthContext";
+import { useMood } from "../../store/MoodContext";
+import { searchUsers, fetchMemberCurrentMoodEmoji } from "../../services/userService";
+import { UserProfile } from "../../types/auth";
+import { MOODS } from "../../constants/Moods";
+import { MoodLevel } from "../../types";
+import debounce from "lodash.debounce";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
+const CHART_WIDTH = width - 110;
+const CHART_HEIGHT = 130;
 
-// Mock Data for the chart
-const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const chartWidth = width - 80; // Accounting for padding
-const chartHeight = 120;
-const xStep = chartWidth / 6;
-
-const greenData = [80, 50, 30, 25, 20, 40, 50]; // Mock points
-const yellowData = [100, 70, 60, 65, 60, 90, 80];
-const purpleData = [120, 105, 95, 105, 115, 110, 120];
-
-// Format points to SVG polyline format
-const formatPoints = (data: number[]) => {
-  return data.map((y, index) => `${index * xStep},${y}`).join(' ');
-};
-
-const greenPoints = formatPoints(greenData);
-const yellowPoints = formatPoints(yellowData);
-const purplePoints = formatPoints(purpleData);
-
-const staticMembers = [
-  { id: '1', name: 'Ayesha (You)', role: 'Admin', isYou: true, image: 'https://i.pravatar.cc/150?img=47' },
-  { id: '2', name: 'Usman', role: 'Member', isYou: false, image: 'https://i.pravatar.cc/150?img=11' },
-  { id: '3', name: 'Hina', role: 'Member', isYou: false, image: 'https://i.pravatar.cc/150?img=32' },
+const MEMBER_COLORS = [
+  "#7C3AED",
+  "#2563EB",
+  "#059669",
+  "#DC2626",
+  "#D97706",
+  "#0891B2",
+  "#BE185D",
+  "#65A30D",
 ];
 
-export default function FamilyScreen() {
+// emoji → MoodLevel lookup built from MOODS config (single source of truth)
+const emojiToLevel: Record<string, MoodLevel> = Object.fromEntries(
+  MOODS.map((m) => [m.emoji, m.level]),
+) as Record<string, MoodLevel>;
+
+const moodEmojiByLevel: Record<MoodLevel, string> = Object.fromEntries(
+  MOODS.map((m) => [m.level, m.emoji]),
+) as Record<MoodLevel, string>;
+
+const moodScale = [...MOODS].sort((a, b) => a.level - b.level);
+
+type ChartPeriod = "weekly" | "monthly";
+
+// Full "YYYY-MM-DD" keyed store — works correctly across month boundaries
+type MoodStore = Record<string, MoodLevel>;
+type MoodDataMap = Record<string, MoodStore>;
+
+type CircleMember = Partial<UserProfile> & {
+  name?: string;
+  role?: string;
+  isYou?: boolean;
+};
+
+// ── helpers ────────────────────────────────────────────────────────────────────
+
+const getMemberName = (m: CircleMember) => m.name || m.fullName || "Unnamed user";
+
+const getInitials = (m: CircleMember) => {
+  const name = getMemberName(m).replace(" (You)", "");
+  const parts = name.trim().split(" ");
+  return parts.length >= 2
+    ? (parts[0][0] + parts[1][0]).toUpperCase()
+    : name.slice(0, 2).toUpperCase();
+};
+
+const getMoodY = (level: MoodLevel) =>
+  CHART_HEIGHT - ((level - 1) / 5) * CHART_HEIGHT;
+
+const toDateStr = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const todayStr = toDateStr(new Date());
+
+// ── AsyncStorage for OTHER members' mood cache ─────────────────────────────────
+// Login user's mood comes from SQLite (MoodContext). Only other members use this.
+
+const peerMoodStoreKey = (memberId: string) => `peer_mood_v1_${memberId}`;
+
+const loadPeerStore = async (memberId: string): Promise<MoodStore> => {
+  try {
+    const raw = await AsyncStorage.getItem(peerMoodStoreKey(memberId));
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Save peer store, pruning entries older than 30 days.
+ * This implements the rolling 30-record offline buffer:
+ * as each new day's record is written, old ones age out automatically.
+ */
+const savePeerStore = async (memberId: string, store: MoodStore) => {
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const pruned = Object.fromEntries(
+      Object.entries(store).filter(([k]) => new Date(k) >= cutoff),
+    );
+    await AsyncStorage.setItem(peerMoodStoreKey(memberId), JSON.stringify(pruned));
+  } catch {}
+};
+
+// ── chart date builder ─────────────────────────────────────────────────────────
+
+type DateEntry = { label: string; dateStr: string };
+
+const buildDateEntries = (period: ChartPeriod): DateEntry[] => {
+  const today = new Date();
+  if (period === "weekly") {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      return {
+        label: `${d.toLocaleString("default", { month: "short" })} ${d.getDate()}`,
+        dateStr: toDateStr(d),
+      };
+    });
+  }
+  const year  = today.getFullYear();
+  const month = today.getMonth();
+  return Array.from({ length: today.getDate() }, (_, i) => {
+    const d = new Date(year, month, i + 1);
+    return { label: `${i + 1}`, dateStr: toDateStr(d) };
+  });
+};
+
+// ── persistence keys ───────────────────────────────────────────────────────────
+
+const SK_FAMILY      = "circle_family_v4";
+const SK_FRIENDS     = "circle_friends_v4";
+const SK_SHARE_MOOD  = "privacy_share_mood";
+const SK_SHARE_NOTES = "privacy_share_notes";
+
+// ── component ─────────────────────────────────────────────────────────────────
+
+export default function FamilyFriendsScreen() {
   const { user: currentUser } = useAuth();
-  const [shareMood, setShareMood] = useState(true);
-  const [shareNotes, setShareNotes] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  
-  const visibilityOptions = ['All Members', 'Close Friends', 'Colleagues', 'Extended Family'];
-  const [visibilityIndex, setVisibilityIndex] = useState(0);
+  // SQLite-backed real mood history for the logged-in user
+  const { entries: myEntries } = useMood();
 
-  const cycleVisibility = () => {
-    setVisibilityIndex((prev) => (prev + 1) % visibilityOptions.length);
-  };
-
-  const performSearch = useCallback(
-    debounce(async (query: string) => {
-      if (query.length < 2) {
-        setSearchResults([]);
-        return;
-      }
-      setIsSearching(true);
-      const results = await searchUsers(query);
-      setSearchResults(results.filter(u => u.id !== currentUser?.id));
-      setIsSearching(false);
-    }, 500),
-    [currentUser]
+  const adminMember: CircleMember = useMemo(
+    () => ({
+      id: currentUser?.id || "you",
+      name: `${currentUser?.fullName || (currentUser as any)?.displayName || "You"} (You)`,
+      role: "Admin",
+      isYou: true,
+    }),
+    [currentUser?.id, currentUser?.fullName, (currentUser as any)?.displayName],
   );
 
-  useEffect(() => {
-    performSearch(searchQuery);
-  }, [searchQuery]);
+  const [activeTab, setActiveTab]         = useState<"family" | "friends">("family");
+  const [shareMood, setShareMood]         = useState(true);
+  const [shareNotes, setShareNotes]       = useState(false);
+  const [searchQuery, setSearchQuery]     = useState("");
+  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
+  const [chartPeriod, setChartPeriod]     = useState<ChartPeriod>("weekly");
 
+  const [familyMembers, setFamilyMembers] = useState<CircleMember[]>([adminMember]);
+  const [friendMembers, setFriendMembers] = useState<CircleMember[]>([adminMember]);
+  // Ref (not state) so toggling it never triggers a re-render or spurious persist writes
+  const readyToSaveRef = useRef(false);
+
+  // memberId → full-date MoodStore
+  const [moodData, setMoodData] = useState<MoodDataMap>({});
+
+  // ── build admin's MoodStore directly from SQLite entries (no network needed) ──
+  // myEntries is ordered DESC by createdAt; take the first (latest) entry per day.
+  const adminMoodStore: MoodStore = useMemo(() => {
+    const store: MoodStore = {};
+    for (const entry of myEntries) {
+      if (!store[entry.date]) store[entry.date] = entry.mood;
+    }
+    return store;
+  }, [myEntries]);
+
+  // Keep moodData in sync with adminMoodStore whenever SQLite entries change
+  useEffect(() => {
+    if (!adminMember.id) return;
+    setMoodData((prev) => ({ ...prev, [adminMember.id!]: adminMoodStore }));
+  }, [adminMoodStore, adminMember.id]);
+
+  // ── load persisted state on mount ─────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const [fam, fri, sm, sn] = await Promise.all([
+          AsyncStorage.getItem(SK_FAMILY),
+          AsyncStorage.getItem(SK_FRIENDS),
+          AsyncStorage.getItem(SK_SHARE_MOOD),
+          AsyncStorage.getItem(SK_SHARE_NOTES),
+        ]);
+        if (fam) {
+          const parsed: CircleMember[] = JSON.parse(fam);
+          setFamilyMembers([adminMember, ...parsed.filter((m) => !m.isYou)]);
+        }
+        if (fri) {
+          const parsed: CircleMember[] = JSON.parse(fri);
+          setFriendMembers([adminMember, ...parsed.filter((m) => !m.isYou)]);
+        }
+        if (sm !== null) setShareMood(JSON.parse(sm));
+        if (sn !== null) setShareNotes(JSON.parse(sn));
+      } catch {}
+      // Set the ref AFTER all setState calls so persist effects never fire
+      // with the initial empty state — they only fire on real user actions.
+      readyToSaveRef.current = true;
+    })();
+  }, []);
+
+  // ── keep admin profile current in both lists ───────────────────────────────────
+  useEffect(() => {
+    setFamilyMembers((prev) => prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)));
+    setFriendMembers((prev) => prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)));
+  }, [adminMember.id, adminMember.name]);
+
+  // ── persist circle members & privacy settings ──────────────────────────────────
+  // readyToSaveRef is a ref, not state, so changing it never triggers these effects.
+  // They only fire when the actual data changes (familyMembers, friendMembers, etc.),
+  // which only happens from real user actions — never from the initial load.
+  useEffect(() => {
+    if (!readyToSaveRef.current) return;
+    AsyncStorage.setItem(SK_FAMILY, JSON.stringify(familyMembers)).catch(() => {});
+  }, [familyMembers]);
+
+  useEffect(() => {
+    if (!readyToSaveRef.current) return;
+    AsyncStorage.setItem(SK_FRIENDS, JSON.stringify(friendMembers)).catch(() => {});
+  }, [friendMembers]);
+
+  useEffect(() => {
+    if (!readyToSaveRef.current) return;
+    AsyncStorage.setItem(SK_SHARE_MOOD, JSON.stringify(shareMood)).catch(() => {});
+  }, [shareMood]);
+
+  useEffect(() => {
+    if (!readyToSaveRef.current) return;
+    AsyncStorage.setItem(SK_SHARE_NOTES, JSON.stringify(shareNotes)).catch(() => {});
+  }, [shareNotes]);
+
+  // ── derived ────────────────────────────────────────────────────────────────────
+  const currentMembers = activeTab === "family" ? familyMembers : friendMembers;
+  const dateEntries    = useMemo(() => buildDateEntries(chartPeriod), [chartPeriod]);
+  const xStep          = dateEntries.length > 1 ? CHART_WIDTH / (dateEntries.length - 1) : 0;
+
+  // Load peer mood data after the initial storage load completes
+  const [peerLoadTick, setPeerLoadTick] = useState(0);
+  useEffect(() => {
+    if (!readyToSaveRef.current) return;
+    setPeerLoadTick((t) => t + 1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMembers.map((m) => m.id).join(","), activeTab]);
+
+  useEffect(() => {
+    if (peerLoadTick === 0) return;
+    const peers = currentMembers.filter((m) => !m.isYou && m.id);
+    if (peers.length === 0) return;
+
+    (async () => {
+      const updates: MoodDataMap = {};
+      await Promise.all(
+        peers.map(async (member) => {
+          const id = member.id!;
+          const store = await loadPeerStore(id);
+
+          try {
+            const emoji = await fetchMemberCurrentMoodEmoji(id);
+            if (emoji) {
+              const level = emojiToLevel[emoji];
+              if (level) {
+                store[todayStr] = level;
+                await savePeerStore(id, store);
+              }
+            }
+          } catch {
+            // network unavailable — use cached data only
+          }
+
+          updates[id] = { ...store };
+        }),
+      );
+      setMoodData((prev) => ({ ...prev, ...updates }));
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerLoadTick]);
+
+  // ── search ─────────────────────────────────────────────────────────────────────
+  const performSearch = useCallback(
+    debounce(async (query: string) => {
+      if (query.length < 2) { setSearchResults([]); return; }
+      const results = await searchUsers(query);
+      setSearchResults(
+        results.filter(
+          (u) =>
+            u.id !== currentUser?.id &&
+            !familyMembers.some((m) => m.id === u.id) &&
+            !friendMembers.some((m) => m.id === u.id),
+        ),
+      );
+    }, 500),
+    [currentUser, familyMembers, friendMembers],
+  );
+  useEffect(() => { performSearch(searchQuery); }, [performSearch, searchQuery]);
+
+  // ── member management ──────────────────────────────────────────────────────────
+  const addMember = (user: UserProfile, list: "family" | "friends") => {
+    const member: CircleMember = {
+      ...user,
+      role: list === "family" ? "Family" : "Friend",
+      isYou: false,
+    };
+    if (list === "family") setFamilyMembers((prev) => [...prev, member]);
+    else { setFriendMembers((prev) => [...prev, member]); setActiveTab("friends"); }
+    setSearchResults((prev) => prev.filter((item) => item.id !== user.id));
+  };
+
+  const deleteMember = (member: CircleMember) => {
+    if (member.isYou) return;
+    Alert.alert(
+      "Remove member?",
+      `Remove ${getMemberName(member)} from your ${activeTab} list?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            if (activeTab === "family")
+              setFamilyMembers((prev) => prev.filter((m) => m.id !== member.id));
+            else
+              setFriendMembers((prev) => prev.filter((m) => m.id !== member.id));
+          },
+        },
+      ],
+    );
+  };
+
+  const moveMember = (member: CircleMember) => {
+    if (member.isYou) return;
+    const moveTo = activeTab === "family" ? "friends" : "family";
+    Alert.alert(
+      "Move member",
+      `Move ${getMemberName(member)} to ${moveTo === "family" ? "Family" : "Friends"}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Move",
+          onPress: () => {
+            if (activeTab === "family") {
+              setFamilyMembers((prev) => prev.filter((m) => m.id !== member.id));
+              setFriendMembers((prev) => [...prev, { ...member, role: "Friend" }]);
+              setActiveTab("friends");
+            } else {
+              setFriendMembers((prev) => prev.filter((m) => m.id !== member.id));
+              setFamilyMembers((prev) => [...prev, { ...member, role: "Family" }]);
+              setActiveTab("family");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // ── chart line renderer ────────────────────────────────────────────────────────
+  const renderMemberLine = (member: CircleMember, color: string) => {
+    if (member.isYou && !shareMood) return null;
+
+    const store = moodData[member.id || ""] || {};
+    const pts   = dateEntries.map((entry, i) => {
+      const mood = store[entry.dateStr];
+      return mood !== undefined ? { x: i * xStep, y: getMoodY(mood) } : null;
+    });
+
+    if (!pts.some(Boolean)) return null;
+
+    return (
+      <G key={`group-${member.id}`}>
+        {pts.map((pt, i) => {
+          if (i === 0 || !pt || !pts[i - 1]) return null;
+          const prev = pts[i - 1]!;
+          return (
+            <Line
+              key={`ln-${member.id}-${i}`}
+              x1={prev.x.toString()} y1={prev.y.toString()}
+              x2={pt.x.toString()}  y2={pt.y.toString()}
+              stroke={color} strokeWidth="2"
+            />
+          );
+        })}
+        {pts.map((pt, i) =>
+          pt ? (
+            <Circle
+              key={`dot-${member.id}-${i}`}
+              cx={pt.x.toString()} cy={pt.y.toString()}
+              r="4" fill={color} stroke="#FFFFFF" strokeWidth="1.5"
+            />
+          ) : null,
+        )}
+      </G>
+    );
+  };
+
+  // ── render ─────────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Family Circle</Text>
-        <TouchableOpacity>
-          <Ionicons name="people" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
+        <Text style={styles.title}>Family & Friends Circle</Text>
+        <View style={{ width: 24 }} />
       </View>
 
+      {/* Tabs */}
+      <View style={styles.tabRow}>
+        {(["family", "friends"] as const).map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            onPress={() => setActiveTab(tab)}
+            style={[styles.tab, activeTab === tab && styles.tabActive]}
+          >
+            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+              {tab === "family" ? "Family" : "Friends"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Search */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={20} color={Colors.textMuted} />
@@ -92,7 +448,7 @@ export default function FamilyScreen() {
             placeholderTextColor={Colors.textMuted}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
               <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
             </TouchableOpacity>
           )}
@@ -100,126 +456,201 @@ export default function FamilyScreen() {
       </View>
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        {/* Search results */}
         {searchResults.length > 0 && (
           <View style={styles.searchResultsCard}>
             <Text style={styles.searchTitle}>Search Results</Text>
             {searchResults.map((user) => (
               <View key={user.id} style={styles.searchItem}>
                 <View style={styles.searchUser}>
-                  <View style={[styles.miniAvatar, { backgroundColor: Colors.primaryLight }]}>
-                    <Text style={styles.miniAvatarText}>{user.fullName.charAt(0)}</Text>
+                  <View style={[styles.initialsCircle, { backgroundColor: Colors.primaryLight }]}>
+                    <Text style={[styles.initialsText, { color: Colors.primary }]}>
+                      {user.fullName.slice(0, 2).toUpperCase()}
+                    </Text>
                   </View>
                   <View>
                     <Text style={styles.searchName}>{user.fullName}</Text>
                     <Text style={styles.searchEmail}>{user.email}</Text>
                   </View>
                 </View>
-                <TouchableOpacity style={styles.addBtn}>
-                  <Ionicons name="person-add" size={18} color={Colors.primary} />
-                </TouchableOpacity>
+                <View style={styles.searchActions}>
+                  <TouchableOpacity style={styles.addChoiceBtn} onPress={() => addMember(user, "family")}>
+                    <Text style={styles.addChoiceText}>Family</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.addChoiceBtn} onPress={() => addMember(user, "friends")}>
+                    <Text style={styles.addChoiceText}>Friend</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </View>
         )}
 
-        {/* Chart Card */}
+        {/* Chart */}
         <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Family Mood Overview</Text>
-          <Text style={styles.chartSubtitle}>This Week</Text>
-
-          <View style={styles.chartContainer}>
-            <View style={styles.yAxis}>
-              <Text style={styles.yEmoji}>😄</Text>
-              <Text style={styles.yEmoji}>😐</Text>
-              <Text style={styles.yEmoji}>😡</Text>
+          <View style={styles.chartHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.chartTitle}>
+                {activeTab === "family" ? "Family Mood" : "Friends Mood"}
+              </Text>
+              <Text style={styles.chartSubtitle}>
+                {new Date().toLocaleString("default", { month: "long", year: "numeric" })}
+              </Text>
             </View>
-
-            <View style={styles.svgContainer}>
-              <Svg width={chartWidth} height={chartHeight}>
-                <Line x1="0" y1="120" x2={chartWidth} y2="120" stroke="#F3F4F6" strokeWidth="1" />
-                <Polyline points={greenPoints} fill="none" stroke="#22C55E" strokeWidth="2" />
-                {greenData.map((y, i) => (
-                  <Circle key={`g-${i}`} cx={i * xStep} cy={y} r="3" fill="#FFFFFF" stroke="#22C55E" strokeWidth="2" />
-                ))}
-                <Polyline points={yellowPoints} fill="none" stroke="#EAB308" strokeWidth="2" />
-                {yellowData.map((y, i) => (
-                  <Circle key={`y-${i}`} cx={i * xStep} cy={y} r="3" fill="#FFFFFF" stroke="#EAB308" strokeWidth="2" />
-                ))}
-                <Polyline points={purplePoints} fill="none" stroke="#8B5CF6" strokeWidth="2" />
-                {purpleData.map((y, i) => (
-                  <Circle key={`p-${i}`} cx={i * xStep} cy={y} r="3" fill="#FFFFFF" stroke="#8B5CF6" strokeWidth="2" />
-                ))}
-              </Svg>
-
-              <View style={styles.xAxis}>
-                {days.map((day) => (
-                  <Text key={day} style={styles.xLabel}>{day}</Text>
-                ))}
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Bottom Two Columns Layout */}
-        <View style={styles.columnsContainer}>
-          <View style={styles.leftColumn}>
-            <Text style={styles.sectionTitle}>Members</Text>
-            <View style={styles.membersList}>
-              {staticMembers.map((member) => (
-                <View key={member.id} style={styles.memberItem}>
-                  <Image source={{ uri: member.image }} style={styles.avatar} />
-                  <View style={styles.memberInfo}>
-                    <View style={styles.nameRow}>
-                      <Text style={styles.memberName}>{member.name}</Text>
-                      {member.isYou && <Text style={styles.crown}>👑</Text>}
-                    </View>
-                    <Text style={styles.memberRole}>{member.role}</Text>
-                  </View>
-                </View>
+            <View style={styles.periodToggle}>
+              {(["weekly", "monthly"] as ChartPeriod[]).map((period) => (
+                <TouchableOpacity
+                  key={period}
+                  style={[styles.periodButton, chartPeriod === period && styles.periodButtonActive]}
+                  onPress={() => setChartPeriod(period)}
+                >
+                  <Text style={[styles.periodButtonText, chartPeriod === period && styles.periodButtonTextActive]}>
+                    {period === "weekly" ? "7D" : "MTD"}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
+          </View>
+
+          {currentMembers.length === 0 ? (
+            <Text style={styles.emptyChart}>
+              Add a {activeTab === "family" ? "family member" : "friend"} to see mood trends.
+            </Text>
+          ) : (
+            <View style={styles.chartBody}>
+              <View style={[styles.yAxis, { height: CHART_HEIGHT }]}>
+                {[...moodScale].reverse().map((mood) => (
+                  <Text key={mood.level} style={styles.yEmojiLabel}>{mood.emoji}</Text>
+                ))}
+              </View>
+
+              <View style={{ width: CHART_WIDTH }}>
+                <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+                  {moodScale.map((mood) => {
+                    const y = getMoodY(mood.level as MoodLevel);
+                    return (
+                      <Line key={`hg-${mood.level}`}
+                        x1="0" y1={y.toString()} x2={CHART_WIDTH.toString()} y2={y.toString()}
+                        stroke="#F3F4F6" strokeWidth="1"
+                      />
+                    );
+                  })}
+                  {dateEntries.map((entry, i) => (
+                    <Line key={`vg-${entry.dateStr}`}
+                      x1={(i * xStep).toString()} y1="0"
+                      x2={(i * xStep).toString()} y2={CHART_HEIGHT.toString()}
+                      stroke="#F3F4F6" strokeWidth="1"
+                    />
+                  ))}
+                  {currentMembers.map((member, index) =>
+                    renderMemberLine(member, MEMBER_COLORS[index % MEMBER_COLORS.length]),
+                  )}
+                </Svg>
+
+                <View style={styles.xAxis}>
+                  {dateEntries
+                    .filter((_, i) =>
+                      chartPeriod === "weekly"
+                        ? true
+                        : i === 0 || i === dateEntries.length - 1 || (i + 1) % 7 === 0,
+                    )
+                    .map((entry) => (
+                      <Text key={entry.dateStr} style={styles.xDateLabel}>{entry.label}</Text>
+                    ))}
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* AI insight */}
+        <View style={styles.aiCard}>
+          <Text style={styles.aiTitle}>AI Assistant</Text>
+          <Text style={styles.aiBody}>
+            {activeTab === "family"
+              ? `Family AI Insight: ${adminMember.name?.replace(" (You)", "") || "You"}'s mood is being tracked. Check in with your family regularly!`
+              : "Friends AI Insight: No dull moments! Your friends are feeling positive and energetic."}
+          </Text>
+        </View>
+
+        {/* Member cards */}
+        <View style={styles.memberSection}>
+          <View style={styles.memberSectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {activeTab === "family" ? "Family Members" : "Friends"}
+            </Text>
             <TouchableOpacity style={styles.inviteButton}>
-              <Ionicons name="person-add-outline" size={18} color="#5B21B6" />
-              <Text style={styles.inviteButtonText}>Invite Member</Text>
+              <Ionicons name="person-add-outline" size={16} color="#5B21B6" />
+              <Text style={styles.inviteButtonText}>Invite</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.rightColumn}>
-            <Text style={styles.sectionTitleRight}>Privacy Settings</Text>
-            <View style={styles.settingCard}>
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleInfo}>
-                  <Text style={styles.toggleLabel}>Share my mood</Text>
-                  <Text style={styles.toggleSub}>(Emoji only)</Text>
-                </View>
-                <Switch
-                  value={shareMood}
-                  onValueChange={setShareMood}
-                  trackColor={{ false: Colors.border, true: '#22C55E' }}
-                  thumbColor={Colors.white}
-                />
-              </View>
-              <View style={[styles.toggleRow, { marginTop: 20 }]}>
-                <View style={styles.toggleInfo}>
-                  <Text style={styles.toggleLabel}>Share my notes</Text>
-                  <Text style={styles.toggleSub}>(With family)</Text>
-                </View>
-                <Switch
-                  value={shareNotes}
-                  onValueChange={setShareNotes}
-                  trackColor={{ false: Colors.border, true: '#22C55E' }}
-                  thumbColor={Colors.white}
-                />
-              </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ flexDirection: "row", gap: 12, paddingVertical: 4 }}>
+              {currentMembers.map((member, index) => {
+                const color     = MEMBER_COLORS[index % MEMBER_COLORS.length];
+                const store     = moodData[member.id || ""] || {};
+                const todayMood = store[todayStr];
+                return (
+                  <View key={member.id} style={styles.memberCard}>
+                    <View style={[styles.memberInitialsCircle, { backgroundColor: color + "22", borderColor: color }]}>
+                      <Text style={[styles.memberInitialsText, { color }]}>{getInitials(member)}</Text>
+                    </View>
+                    <Text style={styles.memberCardName} numberOfLines={1}>
+                      {getMemberName(member).replace(" (You)", "")}
+                    </Text>
+                    <Text style={styles.memberCardRole} numberOfLines={1}>
+                      {member.isYou ? "You ★" : member.role || (activeTab === "family" ? "Family" : "Friend")}
+                    </Text>
+                    {todayMood && (
+                      <Text style={styles.todayMoodEmoji}>{moodEmojiByLevel[todayMood]}</Text>
+                    )}
+                    {!member.isYou && (
+                      <View style={styles.memberCardActions}>
+                        <TouchableOpacity style={styles.cardIconBtn} onPress={() => moveMember(member)}>
+                          <Ionicons name="swap-horizontal-outline" size={14} color={Colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.cardIconBtn} onPress={() => deleteMember(member)}>
+                          <Ionicons name="trash-outline" size={14} color={Colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    <View style={[styles.colorStrip, { backgroundColor: color }]} />
+                  </View>
+                );
+              })}
             </View>
+          </ScrollView>
+        </View>
 
-            <TouchableOpacity style={styles.navCard} onPress={cycleVisibility}>
-              <View>
-                <Text style={styles.navCardTitle}>Visible to</Text>
-                <Text style={styles.navCardValue}>{visibilityOptions[visibilityIndex]}</Text>
+        {/* Privacy Settings */}
+        <View style={styles.privacySection}>
+          <Text style={styles.sectionTitle}>Privacy Settings</Text>
+          <View style={styles.settingCard}>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleInfo}>
+                <Text style={styles.toggleLabel}>Share my mood</Text>
+                <Text style={styles.toggleSub}>Show my line on others' charts</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
-            </TouchableOpacity>
+              <Switch
+                value={shareMood}
+                onValueChange={setShareMood}
+                trackColor={{ false: Colors.border, true: "#22C55E" }}
+                thumbColor={Colors.white}
+              />
+            </View>
+            <View style={[styles.toggleRow, { marginTop: 20 }]}>
+              <View style={styles.toggleInfo}>
+                <Text style={styles.toggleLabel}>Share my notes</Text>
+                <Text style={styles.toggleSub}>(With family)</Text>
+              </View>
+              <Switch
+                value={shareNotes}
+                onValueChange={setShareNotes}
+                trackColor={{ false: Colors.border, true: "#22C55E" }}
+                thumbColor={Colors.white}
+              />
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -228,114 +659,153 @@ export default function FamilyScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FAFAFA' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 15 },
-  title: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
-  container: { flex: 1 },
-  content: { padding: 16, paddingBottom: 40 },
-  
+  safeArea: { flex: 1, backgroundColor: "#FAFAFA" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  title: { fontSize: 18, fontWeight: "700", color: Colors.textPrimary },
+
+  tabRow: { flexDirection: "row", justifyContent: "center", marginBottom: 10 },
+  tab: { marginHorizontal: 10, paddingBottom: 4, borderBottomWidth: 2, borderColor: "transparent" },
+  tabActive: { borderColor: Colors.primary },
+  tabText: { fontWeight: "400", color: Colors.textPrimary, fontSize: 16 },
+  tabTextActive: { fontWeight: "700" },
+
   searchContainer: { paddingHorizontal: 16, marginBottom: 16 },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: Colors.white,
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 48,
+    height: 44,
     borderWidth: 1,
     borderColor: Colors.border,
     gap: 8,
   },
   searchInput: { flex: 1, fontSize: 14, color: Colors.textPrimary },
-  
+
+  container: { flex: 1 },
+  content: { padding: 16, paddingBottom: 40, gap: 16 },
+
   searchResultsCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 20,
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },
-  searchTitle: { fontSize: 14, fontWeight: '700', color: Colors.primary, marginBottom: 12 },
-  searchItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  searchUser: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  miniAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  miniAvatarText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
-  searchName: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+  searchTitle: { fontSize: 14, fontWeight: "700", color: Colors.primary, marginBottom: 12 },
+  searchItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  searchUser: { flexDirection: "row", alignItems: "center", gap: 10 },
+  initialsCircle: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  initialsText: { fontSize: 13, fontWeight: "700" },
+  searchName: { fontSize: 14, fontWeight: "600", color: Colors.textPrimary },
   searchEmail: { fontSize: 12, color: Colors.textMuted },
-  addBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  searchActions: { flexDirection: "row", gap: 8 },
+  addChoiceBtn: {
+    minWidth: 56, height: 30, borderRadius: 15,
+    backgroundColor: Colors.primaryLight,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 10,
+  },
+  addChoiceText: { color: Colors.primary, fontSize: 12, fontWeight: "700" },
 
   chartCard: {
     backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 16,
+    padding: 14,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
       android: { elevation: 2 },
     }),
   },
-  chartTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
-  chartSubtitle: { fontSize: 13, color: Colors.textSecondary, marginBottom: 16 },
-  chartContainer: { flexDirection: 'row' },
-  yAxis: { justifyContent: 'space-between', paddingRight: 10, height: chartHeight, paddingVertical: 10 },
-  yEmoji: { fontSize: 18 },
-  svgContainer: { flex: 1, height: chartHeight + 30 },
-  xAxis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, marginLeft: -10 },
-  xLabel: { fontSize: 12, color: Colors.textMuted },
-
-  columnsContainer: { flexDirection: 'row', gap: 16 },
-  leftColumn: { flex: 1.1 },
-  rightColumn: { flex: 1, gap: 16 },
-
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
-  sectionTitleRight: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  membersList: { gap: 16, marginBottom: 20 },
-  memberItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22 },
-  memberInfo: { flex: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  memberName: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
-  crown: { fontSize: 14 },
-  memberRole: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  inviteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E9D5FF',
-    backgroundColor: '#FAF5FF',
-    gap: 8,
+  chartHeader: {
+    flexDirection: "row", alignItems: "flex-start",
+    justifyContent: "space-between", gap: 10, marginBottom: 10,
   },
-  inviteButtonText: { color: '#5B21B6', fontWeight: '600', fontSize: 14 },
+  chartTitle:    { fontSize: 14, fontWeight: "700", color: Colors.textPrimary },
+  chartSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  periodToggle:  { flexDirection: "row", backgroundColor: "#F3F4F6", borderRadius: 8, padding: 2 },
+  periodButton:  { paddingHorizontal: 8, height: 26, borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  periodButtonActive:     { backgroundColor: Colors.white },
+  periodButtonText:       { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
+  periodButtonTextActive: { color: Colors.primary },
+  emptyChart: { textAlign: "center", color: Colors.textMuted, fontSize: 13, paddingVertical: 30 },
+  chartBody:  { flexDirection: "row", alignItems: "flex-start" },
+  yAxis: { justifyContent: "space-between", paddingRight: 6, width: 28 },
+  yEmojiLabel: { fontSize: 14, textAlign: "center" },
+  xAxis: { flexDirection: "row", justifyContent: "space-between", marginTop: 6, paddingHorizontal: 2 },
+  xDateLabel: { fontSize: 9, color: Colors.textSecondary, textAlign: "center" },
 
+  aiCard:  { backgroundColor: "#F3F4F6", borderRadius: 14, padding: 14 },
+  aiTitle: { fontWeight: "700", fontSize: 14, color: Colors.primary, marginBottom: 4 },
+  aiBody:  { color: Colors.textSecondary, fontSize: 12 },
+
+  memberSection: {},
+  memberSectionHeader: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", marginBottom: 10,
+  },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: Colors.textPrimary },
+  inviteButton: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingVertical: 6, paddingHorizontal: 12,
+    borderRadius: 10, borderWidth: 1,
+    borderColor: "#E9D5FF", backgroundColor: "#FAF5FF",
+  },
+  inviteButtonText: { color: "#5B21B6", fontWeight: "600", fontSize: 12 },
+
+  memberCard: {
+    width: 96,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    paddingTop: 12, paddingHorizontal: 10, paddingBottom: 16,
+    alignItems: "center",
+    overflow: "hidden",
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6 },
+      android: { elevation: 2 },
+    }),
+  },
+  memberInitialsCircle: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 2, marginBottom: 6,
+  },
+  memberInitialsText: { fontSize: 17, fontWeight: "700" },
+  memberCardName: { fontSize: 11, fontWeight: "700", color: Colors.textPrimary, textAlign: "center" },
+  memberCardRole: { fontSize: 10, color: Colors.textSecondary, textAlign: "center", marginTop: 1 },
+  todayMoodEmoji: { fontSize: 18, marginTop: 4 },
+  memberCardActions: { flexDirection: "row", gap: 6, marginTop: 8 },
+  cardIconBtn: {
+    width: 26, height: 26, borderRadius: 7,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  colorStrip: { position: "absolute", bottom: 0, left: 0, right: 0, height: 3 },
+
+  privacySection: { gap: 10 },
   settingCard: {
     backgroundColor: Colors.white,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 16,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
       android: { elevation: 2 },
     }),
   },
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  toggleRow:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   toggleInfo: { flex: 1 },
-  toggleLabel: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary },
-  toggleSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  navCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
-  },
-  navCardTitle: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  navCardValue: { fontSize: 13, color: '#3B82F6', fontWeight: '500' },
+  toggleLabel: { fontSize: 13, fontWeight: "700", color: Colors.textPrimary },
+  toggleSub:   { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
 });
