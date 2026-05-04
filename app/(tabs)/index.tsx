@@ -21,6 +21,7 @@ import WeekMoodChart from '../../components/WeekMoodChart';
 import SectionHeader from '../../components/SectionHeader';
 import { getGreeting, formatDate } from '../../utils/date';
 import { useMoodStats } from '../../hooks/useMoodStats';
+import { useNotificationBadge } from '../../hooks/useNotificationBadge';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -35,6 +36,7 @@ export default function HomeScreen() {
   } = useMoodStats();
   
   const [refreshing, setRefreshing] = useState(false);
+  const unreadCount = useNotificationBadge();
 
   const todayEntry = getTodayEntry();
 
@@ -67,8 +69,23 @@ export default function HomeScreen() {
             <Text style={styles.date}>{formatDate(new Date())}</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => {/* Handle notifications */}}>
-              <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => router.push('/(tabs)/notifications' as any)}
+              activeOpacity={0.75}
+            >
+              <Ionicons
+                name={unreadCount > 0 ? 'notifications' : 'notifications-outline'}
+                size={24}
+                color={unreadCount > 0 ? Colors.primary : Colors.textPrimary}
+              />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}>
@@ -230,6 +247,27 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 5,
     elevation: 2,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: Colors.background,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+    lineHeight: 11,
   },
   avatarBtn: { borderRadius: 22, overflow: 'hidden' },
   avatar: {
