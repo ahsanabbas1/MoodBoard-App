@@ -49,8 +49,9 @@ interface ReminderSettings {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SK_NOTIFS    = 'notifications_v1';
-const SK_REMINDERS = 'reminder_settings_v1';
+// Per-user keys so data never leaks to the next account on sign-out
+const skNotifs    = (uid: string) => `notifications_v1_${uid}`;
+const skReminders = (uid: string) => `reminder_settings_v1_${uid}`;
 
 const TYPE_CONFIG: Record<NotifType, {
   icon: keyof typeof Ionicons.glyphMap;
@@ -292,25 +293,28 @@ export default function NotificationsScreen() {
   const [reminders, setReminders] = useState<ReminderSettings>(DEFAULT_REMINDERS);
   const [loaded, setLoaded] = useState(false);
 
-  // Load persisted read-state and reminder settings
+  // Load persisted read-state and reminder settings — re-runs on user change
   useEffect(() => {
+    if (!user?.id) return;
+    const uid = user.id;
+    setLoaded(false);
     (async () => {
       try {
         const [nb, rb] = await Promise.all([
-          AsyncStorage.getItem(SK_NOTIFS),
-          AsyncStorage.getItem(SK_REMINDERS),
+          AsyncStorage.getItem(skNotifs(uid)),
+          AsyncStorage.getItem(skReminders(uid)),
         ]);
         if (nb) setStoredNotifs(JSON.parse(nb));
         if (rb) setReminders(JSON.parse(rb));
       } catch {}
       setLoaded(true);
     })();
-  }, []);
+  }, [user?.id]);
 
   // Persist reminder settings whenever they change
   useEffect(() => {
-    if (!loaded) return;
-    AsyncStorage.setItem(SK_REMINDERS, JSON.stringify(reminders)).catch(() => {});
+    if (!loaded || !user?.id) return;
+    AsyncStorage.setItem(skReminders(user.id), JSON.stringify(reminders)).catch(() => {});
   }, [reminders, loaded]);
 
   // Build live notifications from mood data
@@ -321,19 +325,21 @@ export default function NotificationsScreen() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  const uid = user?.id ?? '';
+
   // Persist read-state changes
   function markRead(id: string) {
     const updated = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
     const stored  = updated.map(({ id, read, timestamp }) => ({ id, read, timestamp }));
     setStoredNotifs(stored as NotifItem[]);
-    AsyncStorage.setItem(SK_NOTIFS, JSON.stringify(stored)).catch(() => {});
+    if (uid) AsyncStorage.setItem(skNotifs(uid), JSON.stringify(stored)).catch(() => {});
   }
 
   function markAllRead() {
     const updated = notifications.map((n) => ({ ...n, read: true }));
     const stored  = updated.map(({ id, read, timestamp }) => ({ id, read, timestamp }));
     setStoredNotifs(stored as NotifItem[]);
-    AsyncStorage.setItem(SK_NOTIFS, JSON.stringify(stored)).catch(() => {});
+    if (uid) AsyncStorage.setItem(skNotifs(uid), JSON.stringify(stored)).catch(() => {});
   }
 
   function dismissAll() {
@@ -347,7 +353,7 @@ export default function NotificationsScreen() {
           style: 'destructive',
           onPress: () => {
             setStoredNotifs([]);
-            AsyncStorage.setItem(SK_NOTIFS, '[]').catch(() => {});
+            if (uid) AsyncStorage.setItem(skNotifs(uid), '[]').catch(() => {});
           },
         },
       ],

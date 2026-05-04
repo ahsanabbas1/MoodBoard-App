@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMood } from '../store/MoodContext';
+import { useAuth } from '../store/AuthContext';
 import { toDateString } from '../utils/date';
 
-const SK_NOTIFS = 'notifications_v1';
+const skNotifs = (uid: string) => `notifications_v1_${uid}`;
 
 interface StoredState {
   id: string;
@@ -17,20 +18,22 @@ interface StoredState {
  */
 export function useNotificationBadge(): number {
   const { entries, getStreak } = useMood();
+  const { user } = useAuth();
   const streak = getStreak();
 
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
-  // Load stored read-states once
+  // Load stored read-states; re-run when user changes
   useEffect(() => {
-    AsyncStorage.getItem(SK_NOTIFS)
+    if (!user?.id) { setReadIds(new Set()); return; }
+    AsyncStorage.getItem(skNotifs(user.id))
       .then((raw) => {
         if (!raw) return;
         const stored: StoredState[] = JSON.parse(raw);
         setReadIds(new Set(stored.filter((s) => s.read).map((s) => s.id)));
       })
       .catch(() => {});
-  }, []);
+  }, [user?.id]);
 
   // Re-read whenever the user navigates back to the dashboard (focus)
   // by watching entries — any new log will cause a re-render

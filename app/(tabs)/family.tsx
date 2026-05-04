@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useRouter } from "expo-router";
 import {
   View,
   Text,
@@ -149,6 +150,7 @@ const skShareNotes = (uid: string) => `privacy_share_notes_${uid}`;
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function FamilyFriendsScreen() {
+  const router = useRouter();
   const { user: currentUser } = useAuth();
   // SQLite-backed real mood history for the logged-in user
   const { entries: myEntries } = useMood();
@@ -174,6 +176,8 @@ export default function FamilyFriendsScreen() {
   const [friendMembers, setFriendMembers] = useState<CircleMember[]>([adminMember]);
   // Ref (not state) so toggling it never triggers a re-render or spurious persist writes
   const readyToSaveRef = useRef(false);
+  // Tracks which uid's load is in-flight so a fast logout/login doesn't corrupt data
+  const loadingUidRef  = useRef<string | null>(null);
 
   // memberId → full-date MoodStore
   const [moodData, setMoodData] = useState<MoodDataMap>({});
@@ -188,18 +192,24 @@ export default function FamilyFriendsScreen() {
     return store;
   }, [myEntries]);
 
-  // Keep moodData in sync with adminMoodStore whenever SQLite entries change
+  // Clear ALL peer mood data when the user changes — prevents stale data leaking to new account
   useEffect(() => {
-    if (!adminMember.id) return;
+    setMoodData({});
+  }, [adminMember.id]);
+
+  // Keep admin's own mood data in sync with SQLite entries
+  useEffect(() => {
+    if (!adminMember.id || adminMember.id === "you") return;
     setMoodData((prev) => ({ ...prev, [adminMember.id!]: adminMoodStore }));
   }, [adminMoodStore, adminMember.id]);
 
   // ── load persisted state — re-runs whenever the logged-in user changes ──────────
-  // Keys are per-user so data survives logout/login and is isolated between accounts.
   useEffect(() => {
-    if (!adminMember.id || adminMember.id === "you") return; // wait for real user ID
-    readyToSaveRef.current = false; // block saves while we're loading
+    if (!adminMember.id || adminMember.id === "you") return;
     const uid = adminMember.id;
+    readyToSaveRef.current = false;
+    loadingUidRef.current  = uid;   // mark which uid is loading
+
     (async () => {
       try {
         const [fam, fri, sm, sn] = await Promise.all([
@@ -208,20 +218,31 @@ export default function FamilyFriendsScreen() {
           AsyncStorage.getItem(skShareMood(uid)),
           AsyncStorage.getItem(skShareNotes(uid)),
         ]);
+
+        // Guard: if user changed while we were loading, discard results
+        if (loadingUidRef.current !== uid) return;
+
         if (fam) {
           const parsed: CircleMember[] = JSON.parse(fam);
           setFamilyMembers([adminMember, ...parsed.filter((m) => !m.isYou)]);
+        } else {
+          setFamilyMembers([adminMember]);
         }
         if (fri) {
           const parsed: CircleMember[] = JSON.parse(fri);
           setFriendMembers([adminMember, ...parsed.filter((m) => !m.isYou)]);
+        } else {
+          setFriendMembers([adminMember]);
         }
         if (sm !== null) setShareMood(JSON.parse(sm));
         if (sn !== null) setShareNotes(JSON.parse(sn));
       } catch {}
-      readyToSaveRef.current = true;
+
+      if (loadingUidRef.current === uid) {
+        readyToSaveRef.current = true;
+      }
     })();
-  }, [adminMember.id]); // re-run when the user changes (login/logout)
+  }, [adminMember.id]); // re-run on user change (login/logout)
 
   // ── keep admin profile name/avatar current in both lists ──────────────────────
   useEffect(() => {
@@ -385,8 +406,11 @@ export default function FamilyFriendsScreen() {
 
     if (!pts.some(Boolean)) return null;
 
+    const midY = (CHART_HEIGHT / 2).toString();
+
     return (
       <G key={`group-${member.id}`}>
+        {/* Connecting lines — only between adjacent entries that both have data */}
         {pts.map((pt, i) => {
           if (i === 0 || !pt || !pts[i - 1]) return null;
           const prev = pts[i - 1]!;
@@ -399,15 +423,23 @@ export default function FamilyFriendsScreen() {
             />
           );
         })}
-        {pts.map((pt, i) =>
-          pt ? (
+        {/* Filled dots for days with data; hollow grey circles for missed days */}
+        {pts.map((pt, i) => {
+          const x = (i * xStep).toString();
+          return pt ? (
             <Circle
               key={`dot-${member.id}-${i}`}
               cx={pt.x.toString()} cy={pt.y.toString()}
               r="5" fill={color} stroke="#FFFFFF" strokeWidth="2"
             />
-          ) : null,
-        )}
+          ) : (
+            <Circle
+              key={`gap-${member.id}-${i}`}
+              cx={x} cy={midY}
+              r="3" fill="none" stroke="#D1D5DB" strokeWidth="1.5"
+            />
+          );
+        })}
       </G>
     );
   };
@@ -416,7 +448,7 @@ export default function FamilyFriendsScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>Family & Friends Circle</Text>
@@ -611,7 +643,16 @@ export default function FamilyFriendsScreen() {
             <Text style={styles.sectionTitle}>
               {activeTab === "family" ? "Family Members" : "Friends"}
             </Text>
-            <TouchableOpacity style={styles.inviteButton}>
+            <TouchableOpacity
+              style={styles.inviteButton}
+              onPress={() =>
+                Alert.alert(
+                  "Invite someone",
+                  "Share MoodBoard with family or friends so you can compare moods together.",
+                  [{ text: "OK" }],
+                )
+              }
+            >
               <Ionicons name="person-add-outline" size={16} color="#5B21B6" />
               <Text style={styles.inviteButtonText}>Invite</Text>
             </TouchableOpacity>

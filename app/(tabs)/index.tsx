@@ -25,7 +25,7 @@ import { useNotificationBadge } from '../../hooks/useNotificationBadge';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { getTodayEntry } = useMood();
+  const { getTodayEntry, reload } = useMood();
   const { signOut, user } = useAuth();
   const { 
     streak, 
@@ -40,10 +40,11 @@ export default function HomeScreen() {
 
   const todayEntry = getTodayEntry();
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 600);
-  }, []);
+    await reload();
+    setRefreshing(false);
+  }, [reload]);
 
   const handleLogout = async () => {
     try {

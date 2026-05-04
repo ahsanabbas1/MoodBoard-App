@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../constants/Colors';
 import { useAuth } from '../store/AuthContext';
+import { supabase } from '../services/supabase';
+import * as Linking from 'expo-linking';
 
 const { width } = Dimensions.get('window');
 
@@ -128,7 +130,27 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             {!isSignUp && (
-              <TouchableOpacity style={styles.forgotBtn}>
+              <TouchableOpacity
+                style={styles.forgotBtn}
+                onPress={async () => {
+                  if (!email.trim()) {
+                    Alert.alert('Enter your email', 'Type your email address above, then tap Forgot Password.');
+                    return;
+                  }
+                  setLoading(true);
+                  try {
+                    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+                      redirectTo: Linking.createURL('/login'),
+                    });
+                    if (error) throw error;
+                    Alert.alert('Check your inbox', `A password reset link has been sent to ${email.trim()}.`);
+                  } catch (err: any) {
+                    Alert.alert('Error', err.message || 'Failed to send reset email.');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
                 <Text style={styles.forgotText}>Forgot Password?</Text>
               </TouchableOpacity>
             )}

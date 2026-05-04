@@ -11,6 +11,7 @@ import MoodAreaChart, { Period, filterEntriesByPeriod } from '../../components/M
 import MoodDistributionPie from '../../components/MoodDistributionPie';
 import SectionHeader from '../../components/SectionHeader';
 import { fetchAIInsights, InsightsResult, InsightCategory } from '../../services/aiInsightsService';
+import { useAuth } from '../../store/AuthContext';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -51,6 +52,7 @@ const CATEGORY_TEXT_COLOR: Record<InsightCategory, string> = {
 
 export default function InsightsScreen() {
   const { entries, getAverageMood, getStreak } = useMood();
+  const { user } = useAuth();
 
   const [chartPeriod, setChartPeriod] = useState<Period>('monthly');
   const [chartOffsets, setChartOffsets] = useState<Record<Period, number>>({
@@ -116,7 +118,7 @@ export default function InsightsScreen() {
     setAiLoading(true);
     setAiError(null);
     try {
-      const result = await fetchAIInsights(entries);
+      const result = await fetchAIInsights(entries, user?.id ?? '');
       setAiResult(result);
     } catch {
       setAiError('Unable to load insights. Tap to retry.');

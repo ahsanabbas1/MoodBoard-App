@@ -4,11 +4,14 @@ import * as db from './database';
 import { useAuth } from './AuthContext';
 import { getMoodConfig } from '../constants/Moods';
 import { toDateString } from '../utils/date';
+import { invalidateInsightsCache } from '../services/aiInsightsService';
 
 interface MoodContextType {
   entries: MoodEntry[];
   addEntry: (mood: MoodLevel, intensity: number, note: string, tags: string[]) => Promise<void>;
+  editEntry: (id: string, note: string, tags: string[]) => Promise<void>;
   deleteEntry: (id: string) => Promise<void>;
+  reload: () => Promise<void>;
   getTodayEntry: () => MoodEntry | undefined;
   getEntriesForDate: (date: string) => MoodEntry[];
   getEntriesForDateRange: (start: string, end: string) => MoodEntry[];
@@ -26,7 +29,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     initAndLoad();
-  }, [user?.id]); // Reload when user logs in or out
+  }, [user?.id]);
 
   async function initAndLoad() {
     if (!user?.id) {
@@ -34,7 +37,6 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       return;
     }
-
     try {
       setIsLoading(true);
       await db.initDatabase();
@@ -47,12 +49,19 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  /** Re-fetch all entries from SQLite (used by pull-to-refresh). */
+  async function reload() {
+    if (!user?.id) return;
+    const allEntries = await db.getEntries(user.id);
+    setEntries(allEntries);
+  }
+
   async function addEntry(mood: MoodLevel, intensity: number, note: string, tags: string[]) {
     if (!user?.id) return;
     const now = new Date();
     const newEntry: MoodEntry = {
       id: `entry_${Date.now()}`,
-      date: toDateString(now),   // local date, not UTC
+      date: toDateString(now),
       time: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
       mood,
       intensity,
@@ -60,12 +69,15 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
       tags,
       createdAt: now.getTime(),
     };
-    
+
     await db.insertEntry(user.id, newEntry);
     const updated = await db.getEntries(user.id);
     setEntries(updated);
 
-    // Sync current mood emoji to Supabase Profile for Family sharing
+    // Invalidate AI insights cache so next open gets fresh analysis
+    invalidateInsightsCache(user.id).catch(() => {});
+
+    // Sync current mood emoji to Supabase profile for family/friends sharing
     try {
       const moodConfig = getMoodConfig(mood);
       await updateProfile({ currentMoodEmoji: moodConfig.emoji });
@@ -74,15 +86,25 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  /** Update note and tags on an existing entry (mood level is immutable). */
+  async function editEntry(id: string, note: string, tags: string[]) {
+    if (!user?.id) return;
+    await db.updateEntry(user.id, id, { note, tags });
+    const updated = await db.getEntries(user.id);
+    setEntries(updated);
+    invalidateInsightsCache(user.id).catch(() => {});
+  }
+
   async function deleteEntry(id: string) {
     if (!user?.id) return;
     await db.removeEntry(user.id, id);
     const updated = await db.getEntries(user.id);
     setEntries(updated);
+    invalidateInsightsCache(user.id).catch(() => {});
   }
 
   function getTodayEntry() {
-    const today = toDateString();   // local date
+    const today = toDateString();
     return entries.find((e) => e.date === today);
   }
 
@@ -100,7 +122,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const dateStr = toDateString(d);   // local date
+      const dateStr = toDateString(d);
       if (entries.some((e) => e.date === dateStr)) {
         streak++;
       } else {
@@ -113,7 +135,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
   function getAverageMood(days = 7) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = toDateString(cutoff);   // local date
+    const cutoffStr = toDateString(cutoff);
     const recent = entries.filter((e) => e.date >= cutoffStr);
     if (recent.length === 0) return 0;
     return recent.reduce((sum, e) => sum + e.mood, 0) / recent.length;
@@ -124,7 +146,9 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
       value={{
         entries,
         addEntry,
+        editEntry,
         deleteEntry,
+        reload,
         getTodayEntry,
         getEntriesForDate,
         getEntriesForDateRange,

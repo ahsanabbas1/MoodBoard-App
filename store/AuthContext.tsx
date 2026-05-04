@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabase';
 import { UserProfile, AuthState } from '../types/auth';
+import * as db from './database';
 
 interface AuthContextType extends AuthState {
   signIn: (email: string, password: string) => Promise<void>;
@@ -151,6 +153,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
+    const uid = user?.id;
+    // Clear all local user data before invalidating the session
+    if (uid) {
+      await db.clearAllEntries(uid).catch(() => {});
+    }
+    // Remove non-user-keyed AsyncStorage keys that would leak to the next user
+    await AsyncStorage.multiRemove([
+      'ai_insights_cache',
+      'notifications_v1',
+      'reminder_settings_v1',
+    ]).catch(() => {});
+
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);

@@ -10,10 +10,11 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../../constants/Colors';
@@ -65,16 +66,43 @@ function SettingRow({ icon, label, subtitle, value, onToggle, onPress, destructi
   );
 }
 
+const skProfilePrefs = (uid: string) => `profile_prefs_${uid}`;
+
 export default function ProfileScreen() {
-  const { entries, getStreak, getAverageMood } = useMood();
+  const { entries, getStreak, getAverageMood, reload } = useMood();
   const { user, updateProfile } = useAuth();
-  
+
   const [notifications, setNotifications] = useState(true);
   const [dailyReminder, setDailyReminder] = useState(true);
-  
+  const [prefsLoaded, setPrefsLoaded]     = useState(false);
+
   // Edit Name State
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
+
+  // Load persisted prefs when user is known
+  useEffect(() => {
+    if (!user?.id) return;
+    AsyncStorage.getItem(skProfilePrefs(user.id))
+      .then((raw) => {
+        if (raw) {
+          const prefs = JSON.parse(raw);
+          if (prefs.notifications !== undefined) setNotifications(prefs.notifications);
+          if (prefs.dailyReminder  !== undefined) setDailyReminder(prefs.dailyReminder);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPrefsLoaded(true));
+  }, [user?.id]);
+
+  // Persist prefs on change
+  useEffect(() => {
+    if (!prefsLoaded || !user?.id) return;
+    AsyncStorage.setItem(
+      skProfilePrefs(user.id),
+      JSON.stringify({ notifications, dailyReminder }),
+    ).catch(() => {});
+  }, [notifications, dailyReminder, prefsLoaded]);
 
   const streak = getStreak();
   const avg30 = getAverageMood(30);
@@ -88,12 +116,33 @@ export default function ProfileScreen() {
       })
     : null;
 
-  function handleExport() {
-    Alert.alert(
-      'Export Data',
-      'Your mood data export feature will be available soon. It will export as CSV or JSON.',
-      [{ text: 'OK' }]
-    );
+  async function handleExport() {
+    if (entries.length === 0) {
+      Alert.alert('No data', 'Log some moods first before exporting.');
+      return;
+    }
+    try {
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        user: { email: user?.email, name: user?.fullName },
+        totalEntries: entries.length,
+        entries: entries.map((e) => ({
+          date: e.date,
+          time: e.time,
+          mood: e.mood,
+          intensity: e.intensity,
+          note: e.note,
+          tags: e.tags,
+        })),
+      };
+      // Share the JSON as a plain-text message — works on Android/iOS without file-system access
+      await Share.share({
+        message: JSON.stringify(exportData, null, 2),
+        title: 'MoodBoard Export',
+      });
+    } catch (err: any) {
+      Alert.alert('Export failed', err?.message ?? 'Please try again.');
+    }
   }
 
   function handleClearData() {
@@ -106,11 +155,15 @@ export default function ProfileScreen() {
           text: 'Delete All',
           style: 'destructive',
           onPress: async () => {
-            await AsyncStorage.removeItem('@moodboard_entries');
-            Alert.alert('Cleared', 'All your data has been deleted. Restart the app to see changes.');
+            if (!user?.id) return;
+            // Delete from SQLite (the real store) then reload
+            const { clearAllEntries } = await import('../../store/database');
+            await clearAllEntries(user.id);
+            await reload();
+            Alert.alert('Cleared', 'All your mood entries have been deleted.');
           },
         },
-      ]
+      ],
     );
   }
 

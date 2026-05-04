@@ -412,6 +412,26 @@ export default function MoodAreaChart({
                 );
               })}
 
+              {/* Gap markers — hollow grey circle at mid-Y for days with no entry */}
+              {data.map((d, i) => {
+                if (d.avg !== null) return null;   // has data — skip
+                // Only show for weekly/monthly where individual days matter
+                if (period !== 'weekly' && period !== 'monthly') return null;
+                const gapX = xFor(i);
+                const gapY = moodToY(3.5); // visual midpoint of the scale
+                return (
+                  <Circle
+                    key={`gap-${i}`}
+                    cx={gapX}
+                    cy={gapY}
+                    r={3}
+                    fill="none"
+                    stroke={Colors.border}
+                    strokeWidth={1.5}
+                  />
+                );
+              })}
+
               {/* X-axis labels */}
               {data.map((d, i) => {
                 if (!d.showLabel) return null;

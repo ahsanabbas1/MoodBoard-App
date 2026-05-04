@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../constants/Colors";
 import { getMoodConfig } from "../constants/Moods";
 import { MoodEntry } from "../types";
@@ -28,6 +29,31 @@ export default function EntryCard({
     });
   };
 
+  if (compact) {
+    return (
+      <TouchableOpacity
+        style={styles.compactCard}
+        activeOpacity={0.75}
+        onPress={() => router.push(`/entry/${entry.id}` as any)}
+      >
+        <View style={[styles.compactAccent, { backgroundColor: config.color }]} />
+        <Text style={styles.compactEmoji}>{config.emoji}</Text>
+        <Text style={styles.compactLabel} numberOfLines={1}>{config.label}</Text>
+        <Text style={styles.compactTime} numberOfLines={1}>
+          {showDate ? formatDate(entry.date) : entry.time}
+        </Text>
+        {entry.tags.length > 0 && (
+          <View style={styles.compactTag}>
+            <Text style={styles.compactTagText} numberOfLines={1}>
+              {entry.tags[0]}{entry.tags.length > 1 ? ` +${entry.tags.length - 1}` : ''}
+            </Text>
+          </View>
+        )}
+        <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} style={{ marginLeft: 'auto' }} />
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <TouchableOpacity
       style={styles.card}
@@ -47,12 +73,12 @@ export default function EntryCard({
             </Text>
           </View>
         </View>
-        {!compact && entry.note ? (
+        {entry.note ? (
           <Text style={styles.note} numberOfLines={2}>
             {entry.note}
           </Text>
         ) : null}
-        {!compact && entry.tags.length > 0 && (
+        {entry.tags.length > 0 && (
           <View style={styles.tags}>
             {entry.tags.slice(0, 3).map((tag) => (
               <View key={tag} style={styles.tag}>
@@ -135,4 +161,33 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontWeight: "500",
   },
+
+  // Compact single-line layout
+  compactCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  compactAccent: { width: 3, height: 28, borderRadius: 2, flexShrink: 0 },
+  compactEmoji:  { fontSize: 18, flexShrink: 0 },
+  compactLabel:  { fontSize: 13, fontWeight: "600", color: Colors.textPrimary, flex: 1, minWidth: 50 },
+  compactTime:   { fontSize: 11, color: Colors.textMuted, flexShrink: 0 },
+  compactTag: {
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 99,
+    flexShrink: 0,
+  },
+  compactTagText: { fontSize: 10, color: Colors.primary, fontWeight: "600" },
 });
