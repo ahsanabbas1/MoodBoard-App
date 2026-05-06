@@ -20,6 +20,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../store/AuthContext";
 import { useMood } from "../../store/MoodContext";
 import { searchUsers, fetchMemberCurrentMoodEmoji } from "../../services/userService";
+import { sendFriendRequest, hasPendingRequest, getAcceptedConnections } from "../../services/friendRequestService";
 import { UserProfile } from "../../types/auth";
 import { MOODS } from "../../constants/Moods";
 import { MoodLevel } from "../../types";
@@ -171,6 +172,8 @@ export default function FamilyFriendsScreen() {
   const [searchQuery, setSearchQuery]     = useState("");
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [chartPeriod, setChartPeriod]     = useState<ChartPeriod>("weekly");
+  // IDs of users we've already sent a pending request to this session
+  const [pendingRequestIds, setPendingRequestIds] = useState<Set<string>>(new Set());
 
   const [familyMembers, setFamilyMembers] = useState<CircleMember[]>([adminMember]);
   const [friendMembers, setFriendMembers] = useState<CircleMember[]>([adminMember]);
@@ -240,6 +243,19 @@ export default function FamilyFriendsScreen() {
 
       if (loadingUidRef.current === uid) {
         readyToSaveRef.current = true;
+        // Merge accepted connections from Supabase into local lists
+        try {
+          const connections = await getAcceptedConnections(uid);
+          if (loadingUidRef.current !== uid) return;
+          connections.forEach(({ profile, relationshipType }) => {
+            const member: CircleMember = { ...profile, role: relationshipType === 'family' ? 'Family' : 'Friend', isYou: false };
+            if (relationshipType === 'family') {
+              setFamilyMembers((prev) => prev.some((m) => m.id === profile.id) ? prev : [...prev, member]);
+            } else {
+              setFriendMembers((prev) => prev.some((m) => m.id === profile.id) ? prev : [...prev, member]);
+            }
+          });
+        } catch {}
       }
     })();
   }, [adminMember.id]); // re-run on user change (login/logout)
@@ -508,12 +524,42 @@ export default function FamilyFriendsScreen() {
                   </View>
                 </View>
                 <View style={styles.searchActions}>
-                  <TouchableOpacity style={styles.addChoiceBtn} onPress={() => addMember(user, "family")}>
-                    <Text style={styles.addChoiceText}>Family</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.addChoiceBtn} onPress={() => addMember(user, "friends")}>
-                    <Text style={styles.addChoiceText}>Friend</Text>
-                  </TouchableOpacity>
+                  {pendingRequestIds.has(user.id) ? (
+                    <View style={[styles.addChoiceBtn, { opacity: 0.5 }]}>
+                      <Text style={styles.addChoiceText}>Sent ✓</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={styles.addChoiceBtn}
+                        onPress={async () => {
+                          if (!currentUser?.id) return;
+                          try {
+                            await sendFriendRequest(currentUser.id, user.id, "family");
+                            setPendingRequestIds((prev) => new Set(prev).add(user.id));
+                          } catch {
+                            Alert.alert("Error", "Could not send request. Please try again.");
+                          }
+                        }}
+                      >
+                        <Text style={styles.addChoiceText}>Family</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.addChoiceBtn}
+                        onPress={async () => {
+                          if (!currentUser?.id) return;
+                          try {
+                            await sendFriendRequest(currentUser.id, user.id, "friend");
+                            setPendingRequestIds((prev) => new Set(prev).add(user.id));
+                          } catch {
+                            Alert.alert("Error", "Could not send request. Please try again.");
+                          }
+                        }}
+                      >
+                        <Text style={styles.addChoiceText}>Friend</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
             ))}

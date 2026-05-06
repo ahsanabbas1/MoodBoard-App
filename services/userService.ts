@@ -7,11 +7,10 @@ import { UserProfile } from '../types/auth';
 export async function searchUsers(query: string): Promise<UserProfile[]> {
   if (!query || query.length < 2) return [];
 
-  // This will query the 'profiles' table in Supabase
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .or(`full_name.ilike.%${query}%,email.ilike.%${query}%`)
+    .or(`full_name.ilike.%${query}%,email.ilike.%${query}%,username.ilike.%${query}%`)
     .limit(10);
 
   if (error) {
@@ -23,10 +22,25 @@ export async function searchUsers(query: string): Promise<UserProfile[]> {
     id: row.id,
     email: row.email,
     fullName: row.full_name,
+    username: row.username ?? undefined,
     avatarUrl: row.avatar_url,
     currentMoodEmoji: row.current_mood_emoji,
     updatedAt: new Date(row.updated_at).getTime(),
   }));
+}
+
+/**
+ * Returns true if the username is available (not taken by any other user).
+ */
+export async function checkUsernameAvailable(username: string, currentUserId: string): Promise<boolean> {
+  if (!username || username.length < 3) return false;
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('username', username)
+    .neq('id', currentUserId)
+    .maybeSingle();
+  return !data;
 }
 
 /**

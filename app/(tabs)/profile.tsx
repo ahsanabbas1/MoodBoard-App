@@ -80,6 +80,11 @@ export default function ProfileScreen() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
 
+  // Edit Username State
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const [editUsernameValue, setEditUsernameValue] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+
   // Load persisted prefs when user is known
   useEffect(() => {
     if (!user?.id) return;
@@ -148,7 +153,7 @@ export default function ProfileScreen() {
   function handleClearData() {
     Alert.alert(
       'Clear All Data',
-      'This will permanently delete all your mood entries. This action cannot be undone.',
+      'This will permanently delete all your mood entries, family circles, and cached data. This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -156,11 +161,22 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             if (!user?.id) return;
-            // Delete from SQLite (the real store) then reload
+            const uid = user.id;
             const { clearAllEntries } = await import('../../store/database');
-            await clearAllEntries(user.id);
+            await clearAllEntries(uid);
+            // Wipe all user-scoped AsyncStorage keys for this account
+            await AsyncStorage.multiRemove([
+              `circle_family_v5_${uid}`,
+              `circle_friends_v5_${uid}`,
+              `privacy_share_mood_${uid}`,
+              `privacy_share_notes_${uid}`,
+              `notifications_v1_${uid}`,
+              `reminder_settings_v1_${uid}`,
+              `ai_insights_cache_${uid}`,
+              `profile_prefs_${uid}`,
+            ]).catch(() => {});
             await reload();
-            Alert.alert('Cleared', 'All your mood entries have been deleted.');
+            Alert.alert('Cleared', 'All your data has been deleted.');
           },
         },
       ],
@@ -172,6 +188,28 @@ export default function ProfileScreen() {
       await updateProfile({ fullName: editNameValue.trim() });
     }
     setIsEditingName(false);
+  }
+
+  async function handleSaveUsername() {
+    const val = editUsernameValue.trim().replace(/\s+/g, '');
+    if (val.length < 3) {
+      setUsernameError('Username must be at least 3 characters.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(val)) {
+      setUsernameError('Only letters, numbers, and underscores allowed.');
+      return;
+    }
+    if (!user?.id) return;
+    const { checkUsernameAvailable } = await import('../../services/userService');
+    const available = await checkUsernameAvailable(val, user.id);
+    if (!available) {
+      setUsernameError('That username is already taken.');
+      return;
+    }
+    await updateProfile({ username: val });
+    setIsEditingUsername(false);
+    setUsernameError('');
   }
 
   return (
@@ -202,6 +240,16 @@ export default function ProfileScreen() {
               <Ionicons name="pencil" size={16} color="rgba(255,255,255,0.8)" style={{ marginLeft: 6, marginTop: 4 }} />
             </TouchableOpacity>
           </View>
+          {user?.username ? (
+            <TouchableOpacity onPress={() => { setEditUsernameValue(user.username || ''); setUsernameError(''); setIsEditingUsername(true); }} style={styles.usernameRow}>
+              <Text style={styles.usernameText}>@{user.username}</Text>
+              <Ionicons name="pencil" size={12} color="rgba(255,255,255,0.6)" style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => { setEditUsernameValue(''); setUsernameError(''); setIsEditingUsername(true); }} style={styles.usernameRow}>
+              <Text style={styles.usernameText}>Set username</Text>
+            </TouchableOpacity>
+          )}
           <Text style={styles.profileSince}>
             {firstEntryDate ? `Tracking since ${firstEntryDate}` : 'Start logging your mood!'}
           </Text>
@@ -336,6 +384,37 @@ export default function ProfileScreen() {
         <Text style={styles.footer}>Made with ❤️ for your mental wellness</Text>
       </ScrollView>
 
+      {/* Edit Username Modal */}
+      <Modal visible={isEditingUsername} transparent animationType="fade">
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Username</Text>
+            <TextInput
+              style={[styles.modalInput, usernameError ? { borderColor: Colors.error } : null]}
+              value={editUsernameValue}
+              onChangeText={(v) => { setEditUsernameValue(v); setUsernameError(''); }}
+              placeholder="e.g. HappyPanda42"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+            />
+            {usernameError ? <Text style={styles.usernameErrorText}>{usernameError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setIsEditingUsername(false); setUsernameError(''); }}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveUsername}>
+                <Text style={styles.modalSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* Edit Name Modal */}
       <Modal visible={isEditingName} transparent animationType="fade">
         <KeyboardAvoidingView 
@@ -393,6 +472,9 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 32, fontWeight: '700', color: '#fff' },
   nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   profileName: { fontSize: 22, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  usernameRow: { flexDirection: 'row', alignItems: 'center' },
+  usernameText: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
+  usernameErrorText: { fontSize: 13, color: Colors.error, marginBottom: 8 },
   profileSince: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
   profileBadge: {
     backgroundColor: 'rgba(255,255,255,0.2)',

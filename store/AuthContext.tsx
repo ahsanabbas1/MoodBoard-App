@@ -1,9 +1,23 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as Linking from 'expo-linking';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabase';
 import { UserProfile, AuthState } from '../types/auth';
-import * as db from './database';
+
+const USERNAME_ADJECTIVES = ['Happy', 'Calm', 'Bright', 'Sunny', 'Bold', 'Chill', 'Zen', 'Warm', 'Kind', 'Swift', 'Cozy', 'Mellow', 'Lively', 'Gentle', 'Radiant'];
+const USERNAME_NOUNS = ['Panda', 'River', 'Star', 'Moon', 'Bear', 'Cloud', 'Wave', 'Fox', 'Owl', 'Leaf', 'Breeze', 'Spark', 'Bloom', 'Sage', 'Ember'];
+
+async function generateUniqueUsername(): Promise<string> {
+  for (let i = 0; i < 8; i++) {
+    const adj = USERNAME_ADJECTIVES[Math.floor(Math.random() * USERNAME_ADJECTIVES.length)];
+    const noun = USERNAME_NOUNS[Math.floor(Math.random() * USERNAME_NOUNS.length)];
+    const num = Math.floor(Math.random() * 99) + 1;
+    const candidate = `${adj}${noun}${num}`;
+    const { data } = await supabase.from('profiles').select('id').eq('username', candidate).maybeSingle();
+    if (!data) return candidate;
+  }
+  // fallback: timestamp-based unique suffix
+  return `user_${Date.now().toString(36)}`;
+}
 
 interface AuthContextType extends AuthState {
   signIn: (email: string, password: string) => Promise<void>;
@@ -64,30 +78,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (error && error.code === 'PGRST116') {
-        // Profile doesn't exist, create it
+        // Profile doesn't exist — create with a unique username
+        const username = await generateUniqueUsername();
         const newProfile = {
           id: userId,
           email: email,
           full_name: defaultName,
+          username,
           updated_at: new Date().toISOString(),
         };
         const { error: insertError } = await supabase.from('profiles').insert(newProfile);
         if (!insertError) {
-          setUser({
-            id: userId,
-            email: email,
-            fullName: defaultName,
-            updatedAt: Date.now(),
-          });
+          setUser({ id: userId, email, fullName: defaultName, username, updatedAt: Date.now() });
         } else {
           console.error('Error creating profile:', insertError);
-          setUser({ id: userId, email, fullName: defaultName, updatedAt: Date.now() });
+          setUser({ id: userId, email, fullName: defaultName, username, updatedAt: Date.now() });
         }
       } else if (data) {
         setUser({
           id: data.id,
           email: data.email,
           fullName: data.full_name || defaultName,
+          username: data.username ?? undefined,
           avatarUrl: data.avatar_url,
           currentMoodEmoji: data.current_mood_emoji,
           updatedAt: new Date(data.updated_at).getTime(),
@@ -104,13 +116,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Optimistic update locally
     setUser({ ...user, ...updates, updatedAt: Date.now() });
 
-    const dbUpdates = {
+    const dbUpdates: Record<string, any> = {
       id: user.id,
       email: user.email,
       full_name: updates.fullName !== undefined ? updates.fullName : user.fullName,
       current_mood_emoji: updates.currentMoodEmoji !== undefined ? updates.currentMoodEmoji : user.currentMoodEmoji,
       updated_at: new Date().toISOString(),
     };
+    if (updates.username !== undefined) {
+      dbUpdates.username = updates.username;
+    }
 
     const { error } = await supabase.from('profiles').upsert(dbUpdates);
     if (error) {
@@ -153,18 +168,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
-    const uid = user?.id;
-    // Clear all local user data before invalidating the session
-    if (uid) {
-      await db.clearAllEntries(uid).catch(() => {});
-    }
-    // Remove non-user-keyed AsyncStorage keys that would leak to the next user
-    await AsyncStorage.multiRemove([
-      'ai_insights_cache',
-      'notifications_v1',
-      'reminder_settings_v1',
-    ]).catch(() => {});
-
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);

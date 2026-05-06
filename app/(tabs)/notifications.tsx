@@ -21,6 +21,11 @@ import { useAuth } from '../../store/AuthContext';
 import { getMoodConfig, MOODS } from '../../constants/Moods';
 import { MoodLevel } from '../../types';
 import { toDateString } from '../../utils/date';
+import {
+  getPendingRequests,
+  respondToRequest,
+  FriendRequest,
+} from '../../services/friendRequestService';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -292,8 +297,9 @@ export default function NotificationsScreen() {
   const [storedNotifs, setStoredNotifs] = useState<NotifItem[]>([]);
   const [reminders, setReminders] = useState<ReminderSettings>(DEFAULT_REMINDERS);
   const [loaded, setLoaded] = useState(false);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
 
-  // Load persisted read-state and reminder settings — re-runs on user change
+  // Load persisted read-state, reminder settings, and pending friend requests
   useEffect(() => {
     if (!user?.id) return;
     const uid = user.id;
@@ -308,6 +314,11 @@ export default function NotificationsScreen() {
         if (rb) setReminders(JSON.parse(rb));
       } catch {}
       setLoaded(true);
+      // Load friend requests separately (network call)
+      try {
+        const requests = await getPendingRequests(uid);
+        setFriendRequests(requests);
+      } catch {}
     })();
   }, [user?.id]);
 
@@ -323,7 +334,7 @@ export default function NotificationsScreen() {
     [entries, streak, avgMood, storedNotifs],
   );
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read).length + friendRequests.length;
 
   const uid = user?.id ?? '';
 
@@ -363,6 +374,18 @@ export default function NotificationsScreen() {
   function handleNotifPress(item: NotifItem) {
     markRead(item.id);
     if (item.actionRoute) router.push(item.actionRoute as any);
+  }
+
+  async function handleFriendRequestResponse(request: FriendRequest, status: 'accepted' | 'rejected') {
+    try {
+      await respondToRequest(request.id, status);
+      setFriendRequests((prev) => prev.filter((r) => r.id !== request.id));
+      if (status === 'accepted') {
+        Alert.alert('Connected!', `You are now connected with ${request.senderProfile?.fullName || 'this user'} as ${request.relationshipType}. They will appear in your ${request.relationshipType === 'family' ? 'Family' : 'Friends'} circle.`);
+      }
+    } catch {
+      Alert.alert('Error', 'Could not process the request. Please try again.');
+    }
   }
 
   function toggleReminder(key: keyof ReminderSettings) {
@@ -454,6 +477,46 @@ export default function NotificationsScreen() {
         {/* ── ACTIVITY TAB ── */}
         {activeTab === 'activity' && (
           <>
+            {/* Friend / Family Requests */}
+            {friendRequests.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Connection Requests</Text>
+                <View style={styles.notifList}>
+                  {friendRequests.map((req) => (
+                    <View key={req.id} style={styles.requestCard}>
+                      <View style={styles.requestLeft}>
+                        <View style={styles.requestAvatar}>
+                          <Text style={styles.requestAvatarText}>
+                            {(req.senderProfile?.fullName || 'U').slice(0, 2).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.requestInfo}>
+                          <Text style={styles.requestName}>{req.senderProfile?.fullName || 'Unknown'}</Text>
+                          <Text style={styles.requestSub}>
+                            wants to add you as {req.relationshipType === 'family' ? 'Family' : 'a Friend'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.requestActions}>
+                        <TouchableOpacity
+                          style={styles.requestAccept}
+                          onPress={() => handleFriendRequestResponse(req, 'accepted')}
+                        >
+                          <Text style={styles.requestAcceptText}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.requestDecline}
+                          onPress={() => handleFriendRequestResponse(req, 'rejected')}
+                        >
+                          <Text style={styles.requestDeclineText}>Decline</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+
             {notifications.length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIcon}>
@@ -795,6 +858,46 @@ const styles = StyleSheet.create({
   safe:    { flex: 1, backgroundColor: Colors.background },
   scroll:  { flex: 1 },
   content: { padding: 20, paddingBottom: 48, gap: 16 },
+
+  // Friend / Family request cards
+  requestCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 14,
+    gap: 10,
+  },
+  requestLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  requestAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestAvatarText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  requestInfo: { flex: 1 },
+  requestName: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  requestSub: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  requestActions: { flexDirection: 'row', gap: 10 },
+  requestAccept: {
+    flex: 1,
+    backgroundColor: Colors.primary,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  requestAcceptText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  requestDecline: {
+    flex: 1,
+    backgroundColor: Colors.border,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  requestDeclineText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
 
   header: {
     flexDirection: 'row',

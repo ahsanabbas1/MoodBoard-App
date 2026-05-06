@@ -21,6 +21,8 @@ export default function MoreScreen() {
     },
     { label: "Family", icon: "people", route: "/(tabs)/family" as Href },
     { label: "Profile", icon: "person", route: "/(tabs)/profile" as Href },
+    { label: "About", icon: "information-circle", route: "/(tabs)/about" as Href },
+    { label: "Contact", icon: "mail", route: "/(tabs)/contact" as Href },
   ];
 
   return (
