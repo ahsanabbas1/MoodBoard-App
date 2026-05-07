@@ -93,7 +93,7 @@ export default function AboutScreen() {
         </View> */}
 
         <Text style={styles.copyright}>
-          © 2025 MoodBoard. All rights reserved.
+          © 2026 MoodBoard. All rights reserved.
         </Text>
         <Text style={styles.madeWith}>
           Made with ❤️ for your mental wellness

@@ -18,6 +18,7 @@ import { getMoodConfig } from '../../constants/Moods';
 import StatCard from '../../components/StatCard';
 import EntryCard from '../../components/EntryCard';
 import WeekMoodChart from '../../components/WeekMoodChart';
+import AnimatedEmoji from '../../components/AnimatedEmoji';
 import SectionHeader from '../../components/SectionHeader';
 import { getGreeting, formatDate } from '../../utils/date';
 import { useMoodStats } from '../../hooks/useMoodStats';
@@ -27,14 +28,16 @@ export default function HomeScreen() {
   const router = useRouter();
   const { getTodayEntry, reload } = useMood();
   const { signOut, user } = useAuth();
-  const { 
-    streak, 
-    avgConfig, 
-    weekData, 
-    recentEntries, 
-    totalEntries 
-  } = useMoodStats();
-  
+  const [weekOffset, setWeekOffset] = useState(0);
+  const {
+    streak,
+    avgConfig,
+    weekData,
+    weekMonthLabel,
+    recentEntries,
+    totalEntries
+  } = useMoodStats(weekOffset);
+
   const [refreshing, setRefreshing] = useState(false);
   const unreadCount = useNotificationBadge();
 
@@ -114,9 +117,16 @@ export default function HomeScreen() {
             <View style={styles.todayCardTop}>
               <View>
                 <Text style={styles.todayCardLabel}>Today's Mood</Text>
-                <Text style={styles.todayCardMood}>
-                  {getMoodConfig(todayEntry.mood).emoji} {getMoodConfig(todayEntry.mood).label}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <AnimatedEmoji
+                    emoji={getMoodConfig(todayEntry.mood).emoji}
+                    type="float"
+                    style={styles.todayCardMoodEmoji}
+                  />
+                  <Text style={styles.todayCardMood}>
+                    {getMoodConfig(todayEntry.mood).label}
+                  </Text>
+                </View>
                 {todayEntry.note ? (
                   <Text style={styles.todayCardNote} numberOfLines={2}>
                     "{todayEntry.note}"
@@ -164,6 +174,7 @@ export default function HomeScreen() {
             icon="🔥"
             color={streak > 0 ? '#F97316' : Colors.textMuted}
             subtitle={streak === 1 ? 'day' : 'days'}
+            delay={0}
           />
           <StatCard
             label="This Week"
@@ -171,6 +182,7 @@ export default function HomeScreen() {
             icon="📅"
             color={Colors.primary}
             subtitle="entries"
+            delay={80}
           />
           <StatCard
             label="Avg Mood"
@@ -178,13 +190,31 @@ export default function HomeScreen() {
             icon={undefined}
             color={avgConfig ? avgConfig.color : Colors.textMuted}
             subtitle={avgConfig ? avgConfig.label : 'No data'}
+            delay={160}
           />
         </View>
 
         {/* Week Chart */}
         <View style={styles.card}>
-          <SectionHeader title="This Week" />
-          <WeekMoodChart data={weekData} />
+          <View style={styles.weekNavRow}>
+            <TouchableOpacity
+              style={styles.weekNavBtn}
+              onPress={() => setWeekOffset((o) => o - 1)}
+            >
+              <Ionicons name="chevron-back" size={18} color={Colors.primary} />
+            </TouchableOpacity>
+            <Text style={styles.weekTitle}>
+              {weekOffset === 0 ? 'This Week' : weekOffset === -1 ? 'Last Week' : `${Math.abs(weekOffset)} Weeks Ago`}
+            </Text>
+            <TouchableOpacity
+              style={[styles.weekNavBtn, weekOffset >= 0 && styles.weekNavBtnDisabled]}
+              onPress={() => setWeekOffset((o) => Math.min(o + 1, 0))}
+              disabled={weekOffset >= 0}
+            >
+              <Ionicons name="chevron-forward" size={18} color={weekOffset >= 0 ? Colors.border : Colors.primary} />
+            </TouchableOpacity>
+          </View>
+          <WeekMoodChart data={weekData} monthLabel={weekMonthLabel} />
         </View>
 
         {/* Recent Entries */}
@@ -287,7 +317,8 @@ const styles = StyleSheet.create({
   },
   todayCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   todayCardLabel: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
-  todayCardMood: { fontSize: 24, fontWeight: '700', color: '#fff', marginTop: 4 },
+  todayCardMoodEmoji: { fontSize: 32 },
+  todayCardMood: { fontSize: 24, fontWeight: '700', color: '#fff' },
   todayCardNote: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 6, fontStyle: 'italic' },
   todayCardTime: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
   editBtn: {
@@ -329,6 +360,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
+  },
+  weekNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  weekNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekNavBtnDisabled: { opacity: 0.35 },
+  weekTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
 
   emptyState: {

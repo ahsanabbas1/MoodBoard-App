@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import AnimatedEmoji from "../../components/AnimatedEmoji";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
@@ -123,7 +124,12 @@ export default function LogScreen() {
                       style={styles.moodSelectedOverlay}
                     />
                   )}
-                  <Text style={styles.moodEmoji}>{mood.emoji}</Text>
+                  <AnimatedEmoji
+                    emoji={mood.emoji}
+                    type="springSelect"
+                    selected={isSelected}
+                    style={styles.moodEmoji}
+                  />
                   <Text
                     style={[
                       styles.moodLabel,

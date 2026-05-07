@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../constants/Colors';
+import AnimatedEmoji from './AnimatedEmoji';
 
 interface Props {
   label: string;
@@ -7,12 +8,13 @@ interface Props {
   subtitle?: string;
   color?: string;
   icon?: string;
+  delay?: number;
 }
 
-export default function StatCard({ label, value, subtitle, color = Colors.primary, icon }: Props) {
+export default function StatCard({ label, value, subtitle, color = Colors.primary, icon, delay = 0 }: Props) {
   return (
     <View style={styles.card}>
-      {icon ? <Text style={styles.icon}>{icon}</Text> : null}
+      {icon ? <AnimatedEmoji emoji={icon} type="bounceIn" delay={delay} style={styles.icon} /> : null}
       <Text style={[styles.value, { color }]}>{value}</Text>
       <Text style={styles.label}>{label}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}

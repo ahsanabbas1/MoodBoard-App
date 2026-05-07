@@ -1,4 +1,5 @@
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import AnimatedEmoji from '../../components/AnimatedEmoji';
 import { useState, useEffect, useCallback } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -142,28 +143,28 @@ export default function InsightsScreen() {
         {/* Summary Cards — global stats */}
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryEmoji}>📊</Text>
+            <AnimatedEmoji emoji="📊" type="bounceIn" delay={0} style={styles.summaryEmoji} />
             <Text style={styles.summaryValue}>
               {avg7 > 0 ? getMoodConfig(Math.round(avg7) as MoodLevel).emoji : '—'}
             </Text>
             <Text style={styles.summaryLabel}>7-day avg</Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryEmoji}>📆</Text>
+            <AnimatedEmoji emoji="📆" type="bounceIn" delay={80} style={styles.summaryEmoji} />
             <Text style={styles.summaryValue}>
               {avg30 > 0 ? getMoodConfig(Math.round(avg30) as MoodLevel).emoji : '—'}
             </Text>
             <Text style={styles.summaryLabel}>30-day avg</Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryEmoji}>🔥</Text>
+            <AnimatedEmoji emoji="🔥" type="bounceIn" delay={160} style={styles.summaryEmoji} />
             <Text style={[styles.summaryValue, { fontSize: 22, color: streak > 0 ? '#F97316' : Colors.textMuted }]}>
               {streak}
             </Text>
             <Text style={styles.summaryLabel}>Day streak</Text>
           </View>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryEmoji}>📝</Text>
+            <AnimatedEmoji emoji="📝" type="bounceIn" delay={240} style={styles.summaryEmoji} />
             <Text style={[styles.summaryValue, { fontSize: 22, color: Colors.primary }]}>
               {filteredEntries.length}
             </Text>
@@ -198,7 +199,7 @@ export default function InsightsScreen() {
           <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: topMood.color }]}>
             <Text style={styles.insightLabel}>Most Common Mood</Text>
             <View style={styles.insightRow}>
-              <Text style={{ fontSize: 36 }}>{topMood.emoji}</Text>
+              <AnimatedEmoji emoji={topMood.emoji} type="pulse" style={{ fontSize: 36 }} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.insightValue, { color: topMood.color }]}>{topMood.label}</Text>
                 <Text style={styles.insightSub}>
@@ -213,7 +214,7 @@ export default function InsightsScreen() {
         {bestDay && worstDay && bestDay.day !== worstDay.day && (
           <View style={styles.dayRow}>
             <View style={[styles.dayCard, { borderColor: getMoodConfig(6).color }]}>
-              <Text style={styles.dayCardIcon}>😄</Text>
+              <AnimatedEmoji emoji="😄" type="bounceIn" style={styles.dayCardIcon} />
               <Text style={styles.dayCardTitle}>Best Day</Text>
               <Text style={[styles.dayCardValue, { color: getMoodConfig(6).color }]}>
                 {DAY_NAMES[bestDay.day]}
@@ -221,7 +222,7 @@ export default function InsightsScreen() {
               <Text style={styles.dayCardSub}>avg {bestDay.avg.toFixed(1)}/6</Text>
             </View>
             <View style={[styles.dayCard, { borderColor: getMoodConfig(1).color }]}>
-              <Text style={styles.dayCardIcon}>😔</Text>
+              <AnimatedEmoji emoji="😔" type="bounceIn" delay={100} style={styles.dayCardIcon} />
               <Text style={styles.dayCardTitle}>Tough Day</Text>
               <Text style={[styles.dayCardValue, { color: getMoodConfig(1).color }]}>
                 {DAY_NAMES[worstDay.day]}

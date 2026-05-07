@@ -11,6 +11,8 @@ import {
   Dimensions,
   TextInput,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/Colors";
@@ -25,6 +27,8 @@ import { UserProfile } from "../../types/auth";
 import { MOODS } from "../../constants/Moods";
 import { MoodLevel } from "../../types";
 import debounce from "lodash.debounce";
+import QRCode from "react-native-qrcode-svg";
+import { CameraView, useCameraPermissions } from "expo-camera";
 
 const { width } = Dimensions.get("window");
 const CHART_WIDTH  = width - 76;   // wider — only yAxis (28px) + padding
@@ -174,6 +178,14 @@ export default function FamilyFriendsScreen() {
   const [chartPeriod, setChartPeriod]     = useState<ChartPeriod>("weekly");
   // IDs of users we've already sent a pending request to this session
   const [pendingRequestIds, setPendingRequestIds] = useState<Set<string>>(new Set());
+
+  // QR code invite & scanner state
+  const [showQRModal, setShowQRModal]     = useState(false);
+  const [qrMode, setQrMode]               = useState<"show" | "scan">("show");
+  const [scanRelType, setScanRelType]     = useState<"family" | "friends">("friends");
+  const [scanned, setScanned]             = useState(false);
+  const [scanLoading, setScanLoading]     = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const [familyMembers, setFamilyMembers] = useState<CircleMember[]>([adminMember]);
   const [friendMembers, setFriendMembers] = useState<CircleMember[]>([adminMember]);
@@ -410,14 +422,76 @@ export default function FamilyFriendsScreen() {
     );
   };
 
+  // ── QR scan handler ───────────────────────────────────────────────────────────
+  const handleQRScanned = async ({ data }: { data: string }) => {
+    if (scanned || scanLoading) return;
+    setScanned(true);
+    setScanLoading(true);
+    try {
+      // QR data format: "moodboard://user/{userId}"
+      const match = data.match(/moodboard:\/\/user\/([a-zA-Z0-9-]+)/);
+      if (!match) {
+        Alert.alert("Invalid QR", "This QR code is not a valid MoodBoard invite.");
+        setScanned(false);
+        setScanLoading(false);
+        return;
+      }
+      const scannedUserId = match[1];
+      if (scannedUserId === currentUser?.id) {
+        Alert.alert("That's you!", "You cannot add yourself to your circle.");
+        setScanned(false);
+        setScanLoading(false);
+        return;
+      }
+
+      // Check if already in a circle
+      const alreadyAdded =
+        familyMembers.some((m) => m.id === scannedUserId) ||
+        friendMembers.some((m) => m.id === scannedUserId);
+      if (alreadyAdded) {
+        Alert.alert("Already added", "This person is already in your circle.");
+        setScanned(false);
+        setScanLoading(false);
+        return;
+      }
+
+      // Fetch profile from Supabase
+      const results = await searchUsers(scannedUserId);
+      const found = results.find((u) => u.id === scannedUserId) || results[0];
+      if (!found) {
+        Alert.alert("User not found", "Could not find this MoodBoard user.");
+        setScanned(false);
+        setScanLoading(false);
+        return;
+      }
+
+      // Directly add — no approval needed
+      addMember(found, scanRelType);
+      setShowQRModal(false);
+      Alert.alert(
+        "Added!",
+        `${found.fullName} has been added to your ${scanRelType} circle.`,
+      );
+    } catch {
+      Alert.alert("Error", "Something went wrong. Please try again.");
+      setScanned(false);
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
   // ── chart line renderer ────────────────────────────────────────────────────────
-  const renderMemberLine = (member: CircleMember, color: string) => {
+  // Small per-member Y offset prevents lines from perfectly overlapping when
+  // two members log the same mood on the same day.
+  const renderMemberLine = (member: CircleMember, color: string, memberIndex: number, totalMembers: number) => {
     if (member.isYou && !shareMood) return null;
+
+    const yOffset = totalMembers > 1 ? (memberIndex - (totalMembers - 1) / 2) * 3 : 0;
 
     const store = moodData[member.id || ""] || {};
     const pts   = dateEntries.map((entry, i) => {
       const mood = store[entry.dateStr];
-      return mood !== undefined ? { x: i * xStep, y: getMoodY(mood) } : null;
+      return mood !== undefined ? { x: i * xStep, y: getMoodY(mood) + yOffset } : null;
     });
 
     if (!pts.some(Boolean)) return null;
@@ -623,7 +697,7 @@ export default function FamilyFriendsScreen() {
                     />
                   ))}
                   {currentMembers.map((member, index) =>
-                    renderMemberLine(member, MEMBER_COLORS[index % MEMBER_COLORS.length]),
+                    renderMemberLine(member, MEMBER_COLORS[index % MEMBER_COLORS.length], index, currentMembers.length),
                   )}
                 </Svg>
 
@@ -691,16 +765,15 @@ export default function FamilyFriendsScreen() {
             </Text>
             <TouchableOpacity
               style={styles.inviteButton}
-              onPress={() =>
-                Alert.alert(
-                  "Invite someone",
-                  "Share MoodBoard with family or friends so you can compare moods together.",
-                  [{ text: "OK" }],
-                )
-              }
+              onPress={() => {
+                setQrMode("show");
+                setScanned(false);
+                setScanRelType(activeTab);
+                setShowQRModal(true);
+              }}
             >
-              <Ionicons name="person-add-outline" size={16} color="#5B21B6" />
-              <Text style={styles.inviteButtonText}>Invite</Text>
+              <Ionicons name="qr-code-outline" size={16} color="#5B21B6" />
+              <Text style={styles.inviteButtonText}>Invite / Scan</Text>
             </TouchableOpacity>
           </View>
 
@@ -773,6 +846,117 @@ export default function FamilyFriendsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* QR Invite / Scan Modal */}
+      <Modal visible={showQRModal} transparent animationType="slide" onRequestClose={() => setShowQRModal(false)}>
+        <View style={styles.qrOverlay}>
+          <View style={styles.qrSheet}>
+            {/* Header */}
+            <View style={styles.qrHeader}>
+              <Text style={styles.qrTitle}>
+                {qrMode === "show" ? "My Invite QR" : "Scan QR Code"}
+              </Text>
+              <TouchableOpacity onPress={() => { setShowQRModal(false); setScanned(false); }}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Toggle show/scan */}
+            <View style={styles.qrToggleRow}>
+              <TouchableOpacity
+                style={[styles.qrToggleBtn, qrMode === "show" && styles.qrToggleBtnActive]}
+                onPress={() => { setQrMode("show"); setScanned(false); }}
+              >
+                <Ionicons name="qr-code" size={16} color={qrMode === "show" ? "#fff" : Colors.textMuted} />
+                <Text style={[styles.qrToggleText, qrMode === "show" && styles.qrToggleTextActive]}>My QR</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.qrToggleBtn, qrMode === "scan" && styles.qrToggleBtnActive]}
+                onPress={async () => {
+                  if (!cameraPermission?.granted) {
+                    await requestCameraPermission();
+                  }
+                  setQrMode("scan");
+                  setScanned(false);
+                }}
+              >
+                <Ionicons name="scan" size={16} color={qrMode === "scan" ? "#fff" : Colors.textMuted} />
+                <Text style={[styles.qrToggleText, qrMode === "scan" && styles.qrToggleTextActive]}>Scan</Text>
+              </TouchableOpacity>
+            </View>
+
+            {qrMode === "show" ? (
+              <View style={styles.qrCodeBox}>
+                {currentUser?.id ? (
+                  <>
+                    <QRCode
+                      value={`moodboard://user/${currentUser.id}`}
+                      size={200}
+                      color="#1F2937"
+                      backgroundColor="#fff"
+                    />
+                    <Text style={styles.qrHint}>
+                      Ask someone to scan this to add you instantly — no approval needed.
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.qrHint}>Sign in to generate your QR code.</Text>
+                )}
+              </View>
+            ) : (
+              <View style={styles.scannerBox}>
+                {!cameraPermission?.granted ? (
+                  <View style={styles.permissionBox}>
+                    <Ionicons name="camera-outline" size={40} color={Colors.textMuted} />
+                    <Text style={styles.permissionText}>Camera permission is required to scan QR codes.</Text>
+                    <TouchableOpacity style={styles.permissionBtn} onPress={requestCameraPermission}>
+                      <Text style={styles.permissionBtnText}>Allow Camera</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : scanLoading ? (
+                  <View style={styles.permissionBox}>
+                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <Text style={styles.permissionText}>Adding member...</Text>
+                  </View>
+                ) : (
+                  <>
+                    <CameraView
+                      style={styles.camera}
+                      facing="back"
+                      barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                      onBarcodeScanned={scanned ? undefined : handleQRScanned}
+                    />
+                    <View style={styles.scanOverlay}>
+                      <View style={styles.scanFrame} />
+                    </View>
+                    <Text style={styles.scanHint}>Point at a MoodBoard QR code to add them directly.</Text>
+                    {/* Add-as selector */}
+                    <View style={styles.scanRelRow}>
+                      <Text style={styles.scanRelLabel}>Add as:</Text>
+                      {(["family", "friends"] as const).map((rel) => (
+                        <TouchableOpacity
+                          key={rel}
+                          style={[styles.scanRelBtn, scanRelType === rel && styles.scanRelBtnActive]}
+                          onPress={() => setScanRelType(rel)}
+                        >
+                          <Text style={[styles.scanRelText, scanRelType === rel && styles.scanRelTextActive]}>
+                            {rel === "family" ? "Family" : "Friend"}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {scanned && (
+                      <TouchableOpacity style={styles.rescanBtn} onPress={() => setScanned(false)}>
+                        <Text style={styles.rescanText}>Tap to scan again</Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -928,4 +1112,82 @@ const styles = StyleSheet.create({
   toggleInfo: { flex: 1 },
   toggleLabel: { fontSize: 13, fontWeight: "700", color: Colors.textPrimary },
   toggleSub:   { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+
+  // QR Modal
+  qrOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  qrSheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    paddingTop: 20,
+    minHeight: 460,
+  },
+  qrHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  qrTitle: { fontSize: 17, fontWeight: "700", color: Colors.textPrimary },
+  qrToggleRow: {
+    flexDirection: "row",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+    gap: 4,
+  },
+  qrToggleBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 10, borderRadius: 10,
+  },
+  qrToggleBtnActive: { backgroundColor: Colors.primary },
+  qrToggleText: { fontSize: 13, fontWeight: "600", color: Colors.textMuted },
+  qrToggleTextActive: { color: "#fff" },
+
+  qrCodeBox: { alignItems: "center", gap: 16, paddingVertical: 10 },
+  qrHint: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 16 },
+
+  scannerBox: { alignItems: "center", gap: 12, position: "relative" },
+  camera: { width: "100%", height: 260, borderRadius: 16, overflow: "hidden" },
+  scanOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    pointerEvents: "none",
+  },
+  scanFrame: {
+    width: 180,
+    height: 180,
+    borderWidth: 2,
+    borderColor: "#fff",
+    borderRadius: 12,
+  },
+  scanHint: { fontSize: 12, color: Colors.textSecondary, textAlign: "center" },
+  scanRelRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  scanRelLabel: { fontSize: 13, color: Colors.textSecondary, fontWeight: "600" },
+  scanRelBtn: {
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white,
+  },
+  scanRelBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  scanRelText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  scanRelTextActive: { color: "#fff" },
+  rescanBtn: {
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20,
+    backgroundColor: Colors.primaryLight,
+  },
+  rescanText: { fontSize: 13, fontWeight: "600", color: Colors.primary },
+  permissionBox: { alignItems: "center", gap: 12, paddingVertical: 20 },
+  permissionText: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  permissionBtn: {
+    backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12,
+  },
+  permissionBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 });

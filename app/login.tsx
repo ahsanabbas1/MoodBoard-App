@@ -18,7 +18,6 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../constants/Colors';
 import { useAuth } from '../store/AuthContext';
 import { supabase } from '../services/supabase';
-import * as Linking from 'expo-linking';
 
 const { width } = Dimensions.get('window');
 
@@ -139,8 +138,11 @@ export default function LoginScreen() {
                   }
                   setLoading(true);
                   try {
+                    const redirectTo = Platform.OS === 'web'
+                      ? window.location.origin
+                      : 'moodboard://';
                     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                      redirectTo: Linking.createURL('/login'),
+                      redirectTo,
                     });
                     if (error) throw error;
                     Alert.alert('Check your inbox', `A password reset link has been sent to ${email.trim()}.`);
@@ -154,6 +156,7 @@ export default function LoginScreen() {
                 <Text style={styles.forgotText}>Forgot Password?</Text>
               </TouchableOpacity>
             )}
+
           </View>
 
           <View style={styles.footer}>
@@ -267,4 +270,5 @@ const styles = StyleSheet.create({
   },
   footerText: { color: 'rgba(255,255,255,0.7)', fontSize: 15 },
   signUpText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
 });

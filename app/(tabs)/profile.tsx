@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useMood } from '../../store/MoodContext';
 import { useAuth } from '../../store/AuthContext';
@@ -71,6 +72,7 @@ const skProfilePrefs = (uid: string) => `profile_prefs_${uid}`;
 export default function ProfileScreen() {
   const { entries, getStreak, getAverageMood, reload } = useMood();
   const { user, updateProfile } = useAuth();
+  const router = useRouter();
 
   const [notifications, setNotifications] = useState(true);
   const [dailyReminder, setDailyReminder] = useState(true);
@@ -376,7 +378,7 @@ export default function ProfileScreen() {
             <SettingRow
               icon="mail"
               label="Contact Support"
-              onPress={() => Alert.alert('Support', 'support@moodboard.app')}
+              onPress={() => router.push('/(tabs)/contact' as any)}
             />
           </View>
         </View>

@@ -141,7 +141,8 @@ function buildPayload(entries: MoodEntry[]) {
       mood: e.mood,
       intensity: e.intensity,
       tags: e.tags,
-      hasNote: e.note.trim().length > 0,
+      // Include note text (truncated to 200 chars) so AI can reference what the user wrote
+      note: e.note.trim().length > 0 ? e.note.trim().slice(0, 200) : null,
     })),
     stats: { totalEntries: latest100.length, averageMood, streak, topTags, moodTrend, periodDays },
   };
