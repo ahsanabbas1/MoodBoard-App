@@ -1,7 +1,13 @@
-import { View, Text, TouchableOpacity, StyleSheet, LayoutChangeEvent } from 'react-native';
-import { useState } from 'react';
-import { Ionicons } from '@expo/vector-icons';
-import { toDateString } from '../utils/date';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  LayoutChangeEvent,
+} from "react-native";
+import { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { toDateString } from "../utils/date";
 import Svg, {
   Path,
   Circle,
@@ -11,18 +17,18 @@ import Svg, {
   G,
   Text as SvgText,
   Line,
-} from 'react-native-svg';
-import { Colors } from '../constants/Colors';
-import { getMoodConfig, MOODS } from '../constants/Moods';
-import { MoodEntry, MoodLevel } from '../types';
+} from "react-native-svg";
+import { Colors } from "../constants/Colors";
+import { getMoodConfig, MOODS } from "../constants/Moods";
+import { MoodEntry, MoodLevel } from "../types";
 
-export type Period = 'overview' | 'weekly' | 'monthly' | 'yearly';
+export type Period = "overview" | "weekly" | "monthly" | "yearly";
 
 const TABS: { key: Period; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'weekly', label: 'Weekly' },
-  { key: 'monthly', label: 'Monthly' },
-  { key: 'yearly', label: 'Yearly' },
+  { key: "overview", label: "Overview" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+  { key: "yearly", label: "Yearly" },
 ];
 
 const CHART_H = 170;
@@ -62,10 +68,16 @@ export interface Props {
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function moodToY(value: number): number {
-  return PAD_TOP + PLOT_H - ((value - MIN_MOOD) / (MAX_MOOD - MIN_MOOD)) * PLOT_H;
+  return (
+    PAD_TOP + PLOT_H - ((value - MIN_MOOD) / (MAX_MOOD - MIN_MOOD)) * PLOT_H
+  );
 }
 
-function getWeekBounds(offset: number): { startStr: string; endStr: string; startDate: Date } {
+function getWeekBounds(offset: number): {
+  startStr: string;
+  endStr: string;
+  startDate: Date;
+} {
   const now = new Date();
   const day = now.getDay(); // 0 = Sun
   const toMon = day === 0 ? -6 : 1 - day;
@@ -76,23 +88,23 @@ function getWeekBounds(offset: number): { startStr: string; endStr: string; star
   sunday.setDate(monday.getDate() + 6);
   return {
     startDate: monday,
-    startStr: toDateString(monday),   // local date
-    endStr:   toDateString(sunday),   // local date
+    startStr: toDateString(monday), // local date
+    endStr: toDateString(sunday), // local date
   };
 }
 
 export function filterEntriesByPeriod(
   entries: MoodEntry[],
   period: Period,
-  offset: number
+  offset: number,
 ): MoodEntry[] {
   const now = new Date();
-  if (period === 'monthly') {
+  if (period === "monthly") {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    const ms = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const ms = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     return entries.filter((e) => e.date.startsWith(ms));
   }
-  if (period === 'weekly') {
+  if (period === "weekly") {
     const { startStr, endStr } = getWeekBounds(offset);
     return entries.filter((e) => e.date >= startStr && e.date <= endStr);
   }
@@ -103,33 +115,44 @@ export function filterEntriesByPeriod(
 
 function getNavLabel(period: Period, offset: number): string {
   const now = new Date();
-  if (period === 'monthly') {
+  if (period === "monthly") {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return d.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
   }
-  if (period === 'weekly') {
+  if (period === "weekly") {
     const { startDate } = getWeekBounds(offset);
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + 6);
-    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const fmt = (d: Date) =>
+      d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
     return `${fmt(startDate)} – ${fmt(endDate)}`;
   }
   // overview + yearly: just the year
   return String(now.getFullYear() + offset);
 }
 
-function getData(entries: MoodEntry[], period: Period, offset: number): DataPoint[] {
+function getData(
+  entries: MoodEntry[],
+  period: Period,
+  offset: number,
+): DataPoint[] {
   const now = new Date();
 
-  if (period === 'monthly') {
+  if (period === "monthly") {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const year = d.getFullYear();
     const month = d.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const ms = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const ms = `${year}-${String(month + 1).padStart(2, "0")}`;
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
-      const dateStr = `${ms}-${String(day).padStart(2, '0')}`;
+      const dateStr = `${ms}-${String(day).padStart(2, "0")}`;
       const dayEntries = entries.filter((e) => e.date === dateStr);
       return {
         label: String(day),
@@ -141,15 +164,17 @@ function getData(entries: MoodEntry[], period: Period, offset: number): DataPoin
     });
   }
 
-  if (period === 'weekly') {
+  if (period === "weekly") {
     const { startDate } = getWeekBounds(offset);
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(startDate);
       d.setDate(startDate.getDate() + i);
-      const dateStr = toDateString(d);   // local date
+      const dateStr = toDateString(d); // local date
       const dayEntries = entries.filter((e) => e.date === dateStr);
       return {
-        label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        label: d.toLocaleDateString("en-US", {
+          weekday: "short",
+        }),
         showLabel: true,
         avg: dayEntries.length
           ? dayEntries.reduce((s, e) => s + e.mood, 0) / dayEntries.length
@@ -158,22 +183,26 @@ function getData(entries: MoodEntry[], period: Period, offset: number): DataPoin
     });
   }
 
-  if (period === 'yearly') {
+  if (period === "yearly") {
     const year = now.getFullYear() + offset;
     return Array.from({ length: 12 }, (_, i) => {
       const d = new Date(year, i, 1);
       // hide future months in current year
       if (offset === 0 && d > now) {
         return {
-          label: d.toLocaleDateString('en-US', { month: 'short' }),
+          label: d.toLocaleDateString("en-US", {
+            month: "short",
+          }),
           showLabel: true,
           avg: null,
         };
       }
-      const ms = `${year}-${String(i + 1).padStart(2, '0')}`;
+      const ms = `${year}-${String(i + 1).padStart(2, "0")}`;
       const mEntries = entries.filter((e) => e.date.startsWith(ms));
       return {
-        label: d.toLocaleDateString('en-US', { month: 'short' }),
+        label: d.toLocaleDateString("en-US", {
+          month: "short",
+        }),
         showLabel: true,
         avg: mEntries.length
           ? mEntries.reduce((s, e) => s + e.mood, 0) / mEntries.length
@@ -188,15 +217,19 @@ function getData(entries: MoodEntry[], period: Period, offset: number): DataPoin
     const d = new Date(year, i, 1);
     if (offset === 0 && d > now) {
       return {
-        label: d.toLocaleDateString('en-US', { month: 'short' }),
+        label: d.toLocaleDateString("en-US", {
+          month: "short",
+        }),
         showLabel: true,
         avg: null,
       };
     }
-    const ms = `${year}-${String(i + 1).padStart(2, '0')}`;
+    const ms = `${year}-${String(i + 1).padStart(2, "0")}`;
     const mEntries = entries.filter((e) => e.date.startsWith(ms));
     return {
-      label: d.toLocaleDateString('en-US', { month: 'short' }),
+      label: d.toLocaleDateString("en-US", {
+        month: "short",
+      }),
       showLabel: true,
       avg: mEntries.length
         ? mEntries.reduce((s, e) => s + e.mood, 0) / mEntries.length
@@ -205,7 +238,10 @@ function getData(entries: MoodEntry[], period: Period, offset: number): DataPoin
   });
 }
 
-function buildSegments(data: DataPoint[], plotPoints: PlotPoint[]): { x: number; y: number }[][] {
+function buildSegments(
+  data: DataPoint[],
+  plotPoints: PlotPoint[],
+): { x: number; y: number }[][] {
   const segs: { x: number; y: number }[][] = [];
   let cur: { x: number; y: number }[] = [];
   data.forEach((_d, i) => {
@@ -222,12 +258,16 @@ function buildSegments(data: DataPoint[], plotPoints: PlotPoint[]): { x: number;
 }
 
 function linePath(pts: { x: number; y: number }[]): string {
-  return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  return pts
+    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+    .join(" ");
 }
 
 function areaPath(pts: { x: number; y: number }[], bottomY: number): string {
-  if (pts.length < 2) return '';
-  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  if (pts.length < 2) return "";
+  const line = pts
+    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+    .join(" ");
   return `${line} L${pts[pts.length - 1].x.toFixed(1)},${bottomY} L${pts[0].x.toFixed(1)},${bottomY} Z`;
 }
 
@@ -256,7 +296,10 @@ export default function MoodAreaChart({
   const plotPoints: PlotPoint[] = data
     .map((d, i) => {
       if (d.avg === null) return null;
-      const level = Math.max(MIN_MOOD, Math.min(MAX_MOOD, Math.round(d.avg))) as MoodLevel;
+      const level = Math.max(
+        MIN_MOOD,
+        Math.min(MAX_MOOD, Math.round(d.avg)),
+      ) as MoodLevel;
       return {
         x: xFor(i),
         y: moodToY(d.avg),
@@ -270,7 +313,9 @@ export default function MoodAreaChart({
 
   const segments = buildSegments(data, plotPoints);
   const selected =
-    selectedIdx !== null ? plotPoints.find((p) => p.dataIndex === selectedIdx) ?? null : null;
+    selectedIdx !== null
+      ? (plotPoints.find((p) => p.dataIndex === selectedIdx) ?? null)
+      : null;
 
   const dotR = n > 14 ? 3 : 4;
   const canGoForward = offset < 0;
@@ -293,10 +338,15 @@ export default function MoodAreaChart({
           <TouchableOpacity
             key={t.key}
             style={[styles.tab, period === t.key && styles.tabActive]}
-            onPress={() => { onPeriodChange(t.key); setSelectedIdx(null); }}
+            onPress={() => {
+              onPeriodChange(t.key);
+              setSelectedIdx(null);
+            }}
             activeOpacity={0.75}
           >
-            <Text style={[styles.tabText, period === t.key && styles.tabTextActive]}>
+            <Text
+              style={[styles.tabText, period === t.key && styles.tabTextActive]}
+            >
               {t.label}
             </Text>
           </TouchableOpacity>
@@ -305,7 +355,11 @@ export default function MoodAreaChart({
 
       {/* Navigation row — all periods */}
       <View style={styles.monthNav}>
-        <TouchableOpacity style={styles.navBtn} onPress={goBack} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.navBtn}
+          onPress={goBack}
+          activeOpacity={0.7}
+        >
           <Ionicons name="chevron-back" size={18} color={Colors.primary} />
         </TouchableOpacity>
         <Text style={styles.monthTitle}>{getNavLabel(period, offset)}</Text>
@@ -325,19 +379,29 @@ export default function MoodAreaChart({
       {/* Chart */}
       <View
         style={styles.chartWrap}
-        onLayout={(e: LayoutChangeEvent) => setChartWidth(e.nativeEvent.layout.width)}
+        onLayout={(e: LayoutChangeEvent) =>
+          setChartWidth(e.nativeEvent.layout.width)
+        }
       >
         {plotPoints.length < 2 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>No data for this period</Text>
           </View>
         ) : (
-          <View style={{ position: 'relative' }}>
+          <View style={{ position: "relative" }}>
             <Svg width={chartWidth} height={CHART_H}>
               <Defs>
                 <SvgGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0%" stopColor={Colors.primary} stopOpacity="0.20" />
-                  <Stop offset="100%" stopColor={Colors.primary} stopOpacity="0.01" />
+                  <Stop
+                    offset="0%"
+                    stopColor={Colors.primary}
+                    stopOpacity="0.20"
+                  />
+                  <Stop
+                    offset="100%"
+                    stopColor={Colors.primary}
+                    stopOpacity="0.01"
+                  />
                 </SvgGradient>
               </Defs>
 
@@ -371,7 +435,11 @@ export default function MoodAreaChart({
 
               {/* Area fills */}
               {segments.map((seg, si) => (
-                <Path key={`area-${si}`} d={areaPath(seg, bottomY)} fill="url(#areaGrad)" />
+                <Path
+                  key={`area-${si}`}
+                  d={areaPath(seg, bottomY)}
+                  fill="url(#areaGrad)"
+                />
               ))}
 
               {/* Lines */}
@@ -397,7 +465,13 @@ export default function MoodAreaChart({
                   >
                     <Circle cx={p.x} cy={p.y} r={14} fill="transparent" />
                     {isSel && (
-                      <Circle cx={p.x} cy={p.y} r={dotR + 5} fill={p.config.color} fillOpacity={0.18} />
+                      <Circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={dotR + 5}
+                        fill={p.config.color}
+                        fillOpacity={0.18}
+                      />
                     )}
                     <Circle
                       cx={p.x}
@@ -407,16 +481,23 @@ export default function MoodAreaChart({
                       stroke={isSel ? p.config.color : Colors.primary}
                       strokeWidth={1.8}
                     />
-                    {isSel && <Circle cx={p.x} cy={p.y} r={dotR - 1} fill={Colors.card} />}
+                    {isSel && (
+                      <Circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={dotR - 1}
+                        fill={Colors.card}
+                      />
+                    )}
                   </G>
                 );
               })}
 
               {/* Gap markers — hollow grey circle at mid-Y for days with no entry */}
               {data.map((d, i) => {
-                if (d.avg !== null) return null;   // has data — skip
+                if (d.avg !== null) return null; // has data — skip
                 // Only show for weekly/monthly where individual days matter
-                if (period !== 'weekly' && period !== 'monthly') return null;
+                if (period !== "weekly" && period !== "monthly") return null;
                 const gapX = xFor(i);
                 const gapY = moodToY(3.5); // visual midpoint of the scale
                 return (
@@ -443,7 +524,7 @@ export default function MoodAreaChart({
                     y={CHART_H - 5}
                     textAnchor="middle"
                     fontSize={9}
-                    fontWeight={isSel ? '700' : '500'}
+                    fontWeight={isSel ? "700" : "500"}
                     fill={isSel ? Colors.primary : Colors.textMuted}
                   >
                     {d.label}
@@ -459,14 +540,19 @@ export default function MoodAreaChart({
                 style={[
                   styles.tooltip,
                   {
-                    left: Math.min(Math.max(selected.x - 40, PAD_LEFT), chartWidth - 82),
+                    left: Math.min(
+                      Math.max(selected.x - 40, PAD_LEFT),
+                      chartWidth - 82,
+                    ),
                     top: Math.max(selected.y - 62, 0),
                     borderColor: selected.config.color,
                   },
                 ]}
               >
                 <Text style={styles.tooltipEmoji}>{selected.config.emoji}</Text>
-                <Text style={[styles.tooltipMood, { color: selected.config.color }]}>
+                <Text
+                  style={[styles.tooltipMood, { color: selected.config.color }]}
+                >
                   {selected.config.label}
                 </Text>
                 <Text style={styles.tooltipDate}>{selected.label}</Text>
@@ -483,55 +569,55 @@ const styles = StyleSheet.create({
   root: { gap: 12 },
 
   tabs: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: Colors.background,
     borderRadius: 12,
     padding: 3,
     gap: 2,
   },
-  tab: { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: 'center' },
+  tab: { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: "center" },
   tabActive: {
     backgroundColor: Colors.card,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
-  tabText: { fontSize: 12, fontWeight: '500', color: Colors.textMuted },
-  tabTextActive: { color: Colors.primary, fontWeight: '700' },
+  tabText: { fontSize: 12, fontWeight: "500", color: Colors.textMuted },
+  tabTextActive: { color: Colors.primary, fontWeight: "700" },
 
   monthNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 4,
   },
   navBtn: { padding: 6, borderRadius: 8, backgroundColor: Colors.primaryLight },
   navBtnDisabled: { backgroundColor: Colors.border },
-  monthTitle: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary },
+  monthTitle: { fontSize: 13, fontWeight: "700", color: Colors.textPrimary },
 
   chartWrap: { minHeight: CHART_H },
-  empty: { height: CHART_H, alignItems: 'center', justifyContent: 'center' },
+  empty: { height: CHART_H, alignItems: "center", justifyContent: "center" },
   emptyText: { fontSize: 13, color: Colors.textMuted },
 
   tooltip: {
-    position: 'absolute',
+    position: "absolute",
     width: 80,
     backgroundColor: Colors.card,
     borderRadius: 10,
     borderWidth: 1.5,
     paddingVertical: 5,
     paddingHorizontal: 6,
-    alignItems: 'center',
+    alignItems: "center",
     gap: 1,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.12,
     shadowRadius: 6,
     elevation: 5,
   },
   tooltipEmoji: { fontSize: 15 },
-  tooltipMood: { fontSize: 11, fontWeight: '700' },
-  tooltipDate: { fontSize: 10, color: Colors.textMuted, fontWeight: '500' },
+  tooltipMood: { fontSize: 11, fontWeight: "700" },
+  tooltipDate: { fontSize: 10, color: Colors.textMuted, fontWeight: "500" },
 });

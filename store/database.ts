@@ -29,9 +29,14 @@ export async function initDatabase() {
         intensity INTEGER DEFAULT 5,
         note TEXT,
         tags TEXT,
-        createdAt INTEGER NOT NULL
+        createdAt INTEGER NOT NULL,
+        timeZone TEXT
       );
     `);
+
+    await db.execAsync(`
+      ALTER TABLE user_mood_entries ADD COLUMN timeZone TEXT;
+    `).catch(() => {});
 
     // Performance indexes — safe to run multiple times (IF NOT EXISTS)
     await db.execAsync(`
@@ -71,8 +76,8 @@ export async function insertEntry(userId: string, entry: MoodEntry): Promise<voi
     const db = await getDb();
     await db.runAsync(
       `INSERT INTO user_mood_entries
-         (id, user_id, date, time, mood, intensity, note, tags, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, user_id, date, time, mood, intensity, note, tags, createdAt, timeZone)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         entry.id,
         userId,
@@ -83,6 +88,7 @@ export async function insertEntry(userId: string, entry: MoodEntry): Promise<voi
         entry.note,
         JSON.stringify(entry.tags),
         entry.createdAt,
+        entry.timeZone ?? null,
       ],
     );
   } catch (err) {

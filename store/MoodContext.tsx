@@ -3,7 +3,7 @@ import { MoodEntry, MoodLevel } from '../types';
 import * as db from './database';
 import { useAuth } from './AuthContext';
 import { getMoodConfig } from '../constants/Moods';
-import { toDateString } from '../utils/date';
+import { getUserTimeZone, toDateString } from '../utils/date';
 import { invalidateInsightsCache } from '../services/aiInsightsService';
 
 interface MoodContextType {
@@ -68,6 +68,7 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
       note,
       tags,
       createdAt: now.getTime(),
+      timeZone: getUserTimeZone(),
     };
 
     await db.insertEntry(user.id, newEntry);

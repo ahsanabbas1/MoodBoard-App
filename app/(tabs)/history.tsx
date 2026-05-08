@@ -108,8 +108,8 @@ export default function HistoryScreen() {
       );
     }
 
-    const weekStart = toDateStr(weekDays[0]);   // local date
-    const weekEnd   = toDateStr(weekDays[6]);   // local date
+    const weekStart = toDateStr(weekDays[0]); // local date
+    const weekEnd = toDateStr(weekDays[6]); // local date
     return entry.date >= weekStart && entry.date <= weekEnd;
   });
 
@@ -277,7 +277,9 @@ export default function HistoryScreen() {
                       ]}
                     >
                       {date
-                        .toLocaleDateString("en-US", { weekday: "short" })
+                        .toLocaleDateString("en-US", {
+                          weekday: "short",
+                        })
                         .slice(0, 1)}
                     </Text>
                     <Text

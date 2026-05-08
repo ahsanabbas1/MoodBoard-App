@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
@@ -21,8 +27,16 @@ import Svg, { Circle, Line, G } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../store/AuthContext";
 import { useMood } from "../../store/MoodContext";
-import { searchUsers, fetchMemberCurrentMoodEmoji } from "../../services/userService";
-import { sendFriendRequest, hasPendingRequest, getAcceptedConnections } from "../../services/friendRequestService";
+import {
+  searchUsers,
+  fetchMemberCurrentMoodEmoji,
+} from "../../services/userService";
+import {
+  sendFriendRequest,
+  hasPendingRequest,
+  getAcceptedConnections,
+  removeConnection,
+} from "../../services/friendRequestService";
 import { UserProfile } from "../../types/auth";
 import { MOODS } from "../../constants/Moods";
 import { MoodLevel } from "../../types";
@@ -31,9 +45,9 @@ import QRCode from "react-native-qrcode-svg";
 import { CameraView, useCameraPermissions } from "expo-camera";
 
 const { width } = Dimensions.get("window");
-const CHART_WIDTH  = width - 76;   // wider — only yAxis (28px) + padding
-const CHART_HEIGHT = 200;           // taller so lines are clearly visible
-const CHART_PAD    = 10;            // top/bottom padding so dots at extremes aren't clipped
+const CHART_WIDTH = width - 76; // wider — only yAxis (28px) + padding
+const CHART_HEIGHT = 200; // taller so lines are clearly visible
+const CHART_PAD = 10; // top/bottom padding so dots at extremes aren't clipped
 
 const MEMBER_COLORS = [
   "#7C3AED",
@@ -71,7 +85,8 @@ type CircleMember = Partial<UserProfile> & {
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
-const getMemberName = (m: CircleMember) => m.name || m.fullName || "Unnamed user";
+const getMemberName = (m: CircleMember) =>
+  m.name || m.fullName || "Unnamed user";
 
 const getInitials = (m: CircleMember) => {
   const name = getMemberName(m).replace(" (You)", "");
@@ -116,7 +131,10 @@ const savePeerStore = async (memberId: string, store: MoodStore) => {
     const pruned = Object.fromEntries(
       Object.entries(store).filter(([k]) => new Date(k) >= cutoff),
     );
-    await AsyncStorage.setItem(peerMoodStoreKey(memberId), JSON.stringify(pruned));
+    await AsyncStorage.setItem(
+      peerMoodStoreKey(memberId),
+      JSON.stringify(pruned),
+    );
   } catch {}
 };
 
@@ -131,12 +149,12 @@ const buildDateEntries = (period: ChartPeriod): DateEntry[] => {
       const d = new Date(today);
       d.setDate(today.getDate() - (6 - i));
       return {
-        label: `${d.toLocaleString("default", { month: "short" })} ${d.getDate()}`,
+        label: `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
         dateStr: toDateStr(d),
       };
     });
   }
-  const year  = today.getFullYear();
+  const year = today.getFullYear();
   const month = today.getMonth();
   return Array.from({ length: today.getDate() }, (_, i) => {
     const d = new Date(year, month, i + 1);
@@ -147,9 +165,9 @@ const buildDateEntries = (period: ChartPeriod): DateEntry[] => {
 // ── persistence keys ───────────────────────────────────────────────────────────
 
 // Keys are per-user so data is isolated between accounts and survives logout/login
-const skFamily    = (uid: string) => `circle_family_v5_${uid}`;
-const skFriends   = (uid: string) => `circle_friends_v5_${uid}`;
-const skShareMood  = (uid: string) => `privacy_share_mood_${uid}`;
+const skFamily = (uid: string) => `circle_family_v5_${uid}`;
+const skFriends = (uid: string) => `circle_friends_v5_${uid}`;
+const skShareMood = (uid: string) => `privacy_share_mood_${uid}`;
 const skShareNotes = (uid: string) => `privacy_share_notes_${uid}`;
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -170,29 +188,37 @@ export default function FamilyFriendsScreen() {
     [currentUser?.id, currentUser?.fullName, (currentUser as any)?.displayName],
   );
 
-  const [activeTab, setActiveTab]         = useState<"family" | "friends">("family");
-  const [shareMood, setShareMood]         = useState(true);
-  const [shareNotes, setShareNotes]       = useState(false);
-  const [searchQuery, setSearchQuery]     = useState("");
+  const [activeTab, setActiveTab] = useState<"family" | "friends">("family");
+  const [shareMood, setShareMood] = useState(true);
+  const [shareNotes, setShareNotes] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
-  const [chartPeriod, setChartPeriod]     = useState<ChartPeriod>("weekly");
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("weekly");
   // IDs of users we've already sent a pending request to this session
-  const [pendingRequestIds, setPendingRequestIds] = useState<Set<string>>(new Set());
+  const [pendingRequestIds, setPendingRequestIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   // QR code invite & scanner state
-  const [showQRModal, setShowQRModal]     = useState(false);
-  const [qrMode, setQrMode]               = useState<"show" | "scan">("show");
-  const [scanRelType, setScanRelType]     = useState<"family" | "friends">("friends");
-  const [scanned, setScanned]             = useState(false);
-  const [scanLoading, setScanLoading]     = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrMode, setQrMode] = useState<"show" | "scan">("show");
+  const [scanRelType, setScanRelType] = useState<"family" | "friends">(
+    "friends",
+  );
+  const [scanned, setScanned] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
-  const [familyMembers, setFamilyMembers] = useState<CircleMember[]>([adminMember]);
-  const [friendMembers, setFriendMembers] = useState<CircleMember[]>([adminMember]);
+  const [familyMembers, setFamilyMembers] = useState<CircleMember[]>([
+    adminMember,
+  ]);
+  const [friendMembers, setFriendMembers] = useState<CircleMember[]>([
+    adminMember,
+  ]);
   // Ref (not state) so toggling it never triggers a re-render or spurious persist writes
   const readyToSaveRef = useRef(false);
   // Tracks which uid's load is in-flight so a fast logout/login doesn't corrupt data
-  const loadingUidRef  = useRef<string | null>(null);
+  const loadingUidRef = useRef<string | null>(null);
 
   // memberId → full-date MoodStore
   const [moodData, setMoodData] = useState<MoodDataMap>({});
@@ -223,7 +249,7 @@ export default function FamilyFriendsScreen() {
     if (!adminMember.id || adminMember.id === "you") return;
     const uid = adminMember.id;
     readyToSaveRef.current = false;
-    loadingUidRef.current  = uid;   // mark which uid is loading
+    loadingUidRef.current = uid; // mark which uid is loading
 
     (async () => {
       try {
@@ -255,17 +281,53 @@ export default function FamilyFriendsScreen() {
 
       if (loadingUidRef.current === uid) {
         readyToSaveRef.current = true;
-        // Merge accepted connections from Supabase into local lists
+        // Sync accepted connections from Supabase with local lists
         try {
           const connections = await getAcceptedConnections(uid);
           if (loadingUidRef.current !== uid) return;
-          connections.forEach(({ profile, relationshipType }) => {
-            const member: CircleMember = { ...profile, role: relationshipType === 'family' ? 'Family' : 'Friend', isYou: false };
-            if (relationshipType === 'family') {
-              setFamilyMembers((prev) => prev.some((m) => m.id === profile.id) ? prev : [...prev, member]);
-            } else {
-              setFriendMembers((prev) => prev.some((m) => m.id === profile.id) ? prev : [...prev, member]);
-            }
+
+          // Get connection IDs for filtering
+          const familyConnectionIds = new Set(
+            connections
+              .filter((c) => c.relationshipType === "family")
+              .map((c) => c.profile.id),
+          );
+          const friendConnectionIds = new Set(
+            connections
+              .filter((c) => c.relationshipType === "friend")
+              .map((c) => c.profile.id),
+          );
+
+          // Update family members: keep only those still connected
+          setFamilyMembers((prev) => {
+            const synced = prev.filter(
+              (m) => m.isYou || familyConnectionIds.has(m.id!),
+            );
+            // Add any missing connections
+            connections
+              .filter((c) => c.relationshipType === "family")
+              .forEach(({ profile }) => {
+                if (!synced.some((m) => m.id === profile.id)) {
+                  synced.push({ ...profile, role: "Family", isYou: false });
+                }
+              });
+            return synced;
+          });
+
+          // Update friend members: keep only those still connected
+          setFriendMembers((prev) => {
+            const synced = prev.filter(
+              (m) => m.isYou || friendConnectionIds.has(m.id!),
+            );
+            // Add any missing connections
+            connections
+              .filter((c) => c.relationshipType === "friend")
+              .forEach(({ profile }) => {
+                if (!synced.some((m) => m.id === profile.id)) {
+                  synced.push({ ...profile, role: "Friend", isYou: false });
+                }
+              });
+            return synced;
           });
         } catch {}
       }
@@ -281,65 +343,117 @@ export default function FamilyFriendsScreen() {
       (async () => {
         try {
           const connections = await getAcceptedConnections(uid);
-          connections.forEach(({ profile, relationshipType }) => {
-            const member: CircleMember = {
-              ...profile,
-              role: relationshipType === 'family' ? 'Family' : 'Friend',
-              isYou: false,
-            };
-            if (relationshipType === 'family') {
-              setFamilyMembers((prev) =>
-                prev.some((m) => m.id === profile.id) ? prev : [...prev, member]
-              );
-            } else {
-              setFriendMembers((prev) =>
-                prev.some((m) => m.id === profile.id) ? prev : [...prev, member]
-              );
-            }
+
+          // Get connection IDs for filtering
+          const familyConnectionIds = new Set(
+            connections
+              .filter((c) => c.relationshipType === "family")
+              .map((c) => c.profile.id),
+          );
+          const friendConnectionIds = new Set(
+            connections
+              .filter((c) => c.relationshipType === "friend")
+              .map((c) => c.profile.id),
+          );
+
+          // Update family members: keep only those still connected
+          setFamilyMembers((prev) => {
+            const synced = prev.filter(
+              (m) => m.isYou || familyConnectionIds.has(m.id!),
+            );
+            // Add any missing connections
+            connections
+              .filter((c) => c.relationshipType === "family")
+              .forEach(({ profile }) => {
+                if (!synced.some((m) => m.id === profile.id)) {
+                  synced.push({ ...profile, role: "Family", isYou: false });
+                }
+              });
+            return synced;
+          });
+
+          // Update friend members: keep only those still connected
+          setFriendMembers((prev) => {
+            const synced = prev.filter(
+              (m) => m.isYou || friendConnectionIds.has(m.id!),
+            );
+            // Add any missing connections
+            connections
+              .filter((c) => c.relationshipType === "friend")
+              .forEach(({ profile }) => {
+                if (!synced.some((m) => m.id === profile.id)) {
+                  synced.push({ ...profile, role: "Friend", isYou: false });
+                }
+              });
+            return synced;
           });
         } catch {}
       })();
-    }, [adminMember.id])
+    }, [adminMember.id]),
   );
 
   // ── keep admin profile name/avatar current in both lists ──────────────────────
   useEffect(() => {
-    setFamilyMembers((prev) => prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)));
-    setFriendMembers((prev) => prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)));
+    setFamilyMembers((prev) =>
+      prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)),
+    );
+    setFriendMembers((prev) =>
+      prev.map((m) => (m.isYou ? { ...m, ...adminMember } : m)),
+    );
   }, [adminMember.name]);
 
   // ── persist — only fire after load completes, keyed to the current user ────────
   useEffect(() => {
-    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
-    AsyncStorage.setItem(skFamily(adminMember.id), JSON.stringify(familyMembers)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you")
+      return;
+    AsyncStorage.setItem(
+      skFamily(adminMember.id),
+      JSON.stringify(familyMembers),
+    ).catch(() => {});
   }, [familyMembers]);
 
   useEffect(() => {
-    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
-    AsyncStorage.setItem(skFriends(adminMember.id), JSON.stringify(friendMembers)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you")
+      return;
+    AsyncStorage.setItem(
+      skFriends(adminMember.id),
+      JSON.stringify(friendMembers),
+    ).catch(() => {});
   }, [friendMembers]);
 
   useEffect(() => {
-    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
-    AsyncStorage.setItem(skShareMood(adminMember.id), JSON.stringify(shareMood)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you")
+      return;
+    AsyncStorage.setItem(
+      skShareMood(adminMember.id),
+      JSON.stringify(shareMood),
+    ).catch(() => {});
   }, [shareMood]);
 
   useEffect(() => {
-    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you") return;
-    AsyncStorage.setItem(skShareNotes(adminMember.id), JSON.stringify(shareNotes)).catch(() => {});
+    if (!readyToSaveRef.current || !adminMember.id || adminMember.id === "you")
+      return;
+    AsyncStorage.setItem(
+      skShareNotes(adminMember.id),
+      JSON.stringify(shareNotes),
+    ).catch(() => {});
   }, [shareNotes]);
 
   // ── derived ────────────────────────────────────────────────────────────────────
   const currentMembers = activeTab === "family" ? familyMembers : friendMembers;
-  const dateEntries    = useMemo(() => buildDateEntries(chartPeriod), [chartPeriod]);
-  const xStep          = dateEntries.length > 1 ? CHART_WIDTH / (dateEntries.length - 1) : 0;
+  const dateEntries = useMemo(
+    () => buildDateEntries(chartPeriod),
+    [chartPeriod],
+  );
+  const xStep =
+    dateEntries.length > 1 ? CHART_WIDTH / (dateEntries.length - 1) : 0;
 
   // Load peer mood data after the initial storage load completes
   const [peerLoadTick, setPeerLoadTick] = useState(0);
   useEffect(() => {
     if (!readyToSaveRef.current) return;
     setPeerLoadTick((t) => t + 1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMembers.map((m) => m.id).join(","), activeTab]);
 
   useEffect(() => {
@@ -372,13 +486,16 @@ export default function FamilyFriendsScreen() {
       );
       setMoodData((prev) => ({ ...prev, ...updates }));
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peerLoadTick]);
 
   // ── search ─────────────────────────────────────────────────────────────────────
   const performSearch = useCallback(
     debounce(async (query: string) => {
-      if (query.length < 2) { setSearchResults([]); return; }
+      if (query.length < 2) {
+        setSearchResults([]);
+        return;
+      }
       const results = await searchUsers(query);
       setSearchResults(
         results.filter(
@@ -391,7 +508,9 @@ export default function FamilyFriendsScreen() {
     }, 500),
     [currentUser, familyMembers, friendMembers],
   );
-  useEffect(() => { performSearch(searchQuery); }, [performSearch, searchQuery]);
+  useEffect(() => {
+    performSearch(searchQuery);
+  }, [performSearch, searchQuery]);
 
   // ── member management ──────────────────────────────────────────────────────────
   const addMember = (user: UserProfile, list: "family" | "friends") => {
@@ -401,7 +520,10 @@ export default function FamilyFriendsScreen() {
       isYou: false,
     };
     if (list === "family") setFamilyMembers((prev) => [...prev, member]);
-    else { setFriendMembers((prev) => [...prev, member]); setActiveTab("friends"); }
+    else {
+      setFriendMembers((prev) => [...prev, member]);
+      setActiveTab("friends");
+    }
     setSearchResults((prev) => prev.filter((item) => item.id !== user.id));
   };
 
@@ -416,10 +538,16 @@ export default function FamilyFriendsScreen() {
           text: "Remove",
           style: "destructive",
           onPress: () => {
+            const memberId = member.id!;
             if (activeTab === "family")
-              setFamilyMembers((prev) => prev.filter((m) => m.id !== member.id));
+              setFamilyMembers((prev) => prev.filter((m) => m.id !== memberId));
             else
-              setFriendMembers((prev) => prev.filter((m) => m.id !== member.id));
+              setFriendMembers((prev) => prev.filter((m) => m.id !== memberId));
+            removeConnection(
+              adminMember.id!,
+              memberId,
+              activeTab === "family" ? "family" : "friend",
+            ).catch(() => {});
           },
         },
       ],
@@ -438,12 +566,22 @@ export default function FamilyFriendsScreen() {
           text: "Move",
           onPress: () => {
             if (activeTab === "family") {
-              setFamilyMembers((prev) => prev.filter((m) => m.id !== member.id));
-              setFriendMembers((prev) => [...prev, { ...member, role: "Friend" }]);
+              setFamilyMembers((prev) =>
+                prev.filter((m) => m.id !== member.id),
+              );
+              setFriendMembers((prev) => [
+                ...prev,
+                { ...member, role: "Friend" },
+              ]);
               setActiveTab("friends");
             } else {
-              setFriendMembers((prev) => prev.filter((m) => m.id !== member.id));
-              setFamilyMembers((prev) => [...prev, { ...member, role: "Family" }]);
+              setFriendMembers((prev) =>
+                prev.filter((m) => m.id !== member.id),
+              );
+              setFamilyMembers((prev) => [
+                ...prev,
+                { ...member, role: "Family" },
+              ]);
               setActiveTab("family");
             }
           },
@@ -461,7 +599,10 @@ export default function FamilyFriendsScreen() {
       // QR data format: "moodboard://user/{userId}"
       const match = data.match(/moodboard:\/\/user\/([a-zA-Z0-9-]+)/);
       if (!match) {
-        Alert.alert("Invalid QR", "This QR code is not a valid MoodBoard invite.");
+        Alert.alert(
+          "Invalid QR",
+          "This QR code is not a valid MoodBoard invite.",
+        );
         setScanned(false);
         setScanLoading(false);
         return;
@@ -513,15 +654,23 @@ export default function FamilyFriendsScreen() {
   // ── chart line renderer ────────────────────────────────────────────────────────
   // Small per-member Y offset prevents lines from perfectly overlapping when
   // two members log the same mood on the same day.
-  const renderMemberLine = (member: CircleMember, color: string, memberIndex: number, totalMembers: number) => {
+  const renderMemberLine = (
+    member: CircleMember,
+    color: string,
+    memberIndex: number,
+    totalMembers: number,
+  ) => {
     if (member.isYou && !shareMood) return null;
 
-    const yOffset = totalMembers > 1 ? (memberIndex - (totalMembers - 1) / 2) * 3 : 0;
+    const yOffset =
+      totalMembers > 1 ? (memberIndex - (totalMembers - 1) / 2) * 3 : 0;
 
     const store = moodData[member.id || ""] || {};
-    const pts   = dateEntries.map((entry, i) => {
+    const pts = dateEntries.map((entry, i) => {
       const mood = store[entry.dateStr];
-      return mood !== undefined ? { x: i * xStep, y: getMoodY(mood) + yOffset } : null;
+      return mood !== undefined
+        ? { x: i * xStep, y: getMoodY(mood) + yOffset }
+        : null;
     });
 
     if (!pts.some(Boolean)) return null;
@@ -537,9 +686,12 @@ export default function FamilyFriendsScreen() {
           return (
             <Line
               key={`ln-${member.id}-${i}`}
-              x1={prev.x.toString()} y1={prev.y.toString()}
-              x2={pt.x.toString()}  y2={pt.y.toString()}
-              stroke={color} strokeWidth="2.5"
+              x1={prev.x.toString()}
+              y1={prev.y.toString()}
+              x2={pt.x.toString()}
+              y2={pt.y.toString()}
+              stroke={color}
+              strokeWidth="2.5"
             />
           );
         })}
@@ -549,14 +701,22 @@ export default function FamilyFriendsScreen() {
           return pt ? (
             <Circle
               key={`dot-${member.id}-${i}`}
-              cx={pt.x.toString()} cy={pt.y.toString()}
-              r="5" fill={color} stroke="#FFFFFF" strokeWidth="2"
+              cx={pt.x.toString()}
+              cy={pt.y.toString()}
+              r="5"
+              fill={color}
+              stroke="#FFFFFF"
+              strokeWidth="2"
             />
           ) : (
             <Circle
               key={`gap-${member.id}-${i}`}
-              cx={x} cy={midY}
-              r="3" fill="none" stroke="#D1D5DB" strokeWidth="1.5"
+              cx={x}
+              cy={midY}
+              r="3"
+              fill="none"
+              stroke="#D1D5DB"
+              strokeWidth="1.5"
             />
           );
         })}
@@ -583,7 +743,12 @@ export default function FamilyFriendsScreen() {
             onPress={() => setActiveTab(tab)}
             style={[styles.tab, activeTab === tab && styles.tabActive]}
           >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === tab && styles.tabTextActive,
+              ]}
+            >
               {tab === "family" ? "Family" : "Friends"}
             </Text>
           </TouchableOpacity>
@@ -603,13 +768,20 @@ export default function FamilyFriendsScreen() {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+              <Ionicons
+                name="close-circle"
+                size={18}
+                color={Colors.textMuted}
+              />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
         {/* Search results */}
         {searchResults.length > 0 && (
           <View style={styles.searchResultsCard}>
@@ -617,8 +789,15 @@ export default function FamilyFriendsScreen() {
             {searchResults.map((user) => (
               <View key={user.id} style={styles.searchItem}>
                 <View style={styles.searchUser}>
-                  <View style={[styles.initialsCircle, { backgroundColor: Colors.primaryLight }]}>
-                    <Text style={[styles.initialsText, { color: Colors.primary }]}>
+                  <View
+                    style={[
+                      styles.initialsCircle,
+                      { backgroundColor: Colors.primaryLight },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.initialsText, { color: Colors.primary }]}
+                    >
                       {user.fullName.slice(0, 2).toUpperCase()}
                     </Text>
                   </View>
@@ -639,10 +818,19 @@ export default function FamilyFriendsScreen() {
                         onPress={async () => {
                           if (!currentUser?.id) return;
                           try {
-                            await sendFriendRequest(currentUser.id, user.id, "family");
-                            setPendingRequestIds((prev) => new Set(prev).add(user.id));
+                            await sendFriendRequest(
+                              currentUser.id,
+                              user.id,
+                              "family",
+                            );
+                            setPendingRequestIds((prev) =>
+                              new Set(prev).add(user.id),
+                            );
                           } catch {
-                            Alert.alert("Error", "Could not send request. Please try again.");
+                            Alert.alert(
+                              "Error",
+                              "Could not send request. Please try again.",
+                            );
                           }
                         }}
                       >
@@ -653,10 +841,19 @@ export default function FamilyFriendsScreen() {
                         onPress={async () => {
                           if (!currentUser?.id) return;
                           try {
-                            await sendFriendRequest(currentUser.id, user.id, "friend");
-                            setPendingRequestIds((prev) => new Set(prev).add(user.id));
+                            await sendFriendRequest(
+                              currentUser.id,
+                              user.id,
+                              "friend",
+                            );
+                            setPendingRequestIds((prev) =>
+                              new Set(prev).add(user.id),
+                            );
                           } catch {
-                            Alert.alert("Error", "Could not send request. Please try again.");
+                            Alert.alert(
+                              "Error",
+                              "Could not send request. Please try again.",
+                            );
                           }
                         }}
                       >
@@ -678,17 +875,28 @@ export default function FamilyFriendsScreen() {
                 {activeTab === "family" ? "Family Mood" : "Friends Mood"}
               </Text>
               <Text style={styles.chartSubtitle}>
-                {new Date().toLocaleString("default", { month: "long", year: "numeric" })}
+                {new Date().toLocaleDateString("en-US", {
+                  month: "long",
+                  year: "numeric",
+                })}
               </Text>
             </View>
             <View style={styles.periodToggle}>
               {(["weekly", "monthly"] as ChartPeriod[]).map((period) => (
                 <TouchableOpacity
                   key={period}
-                  style={[styles.periodButton, chartPeriod === period && styles.periodButtonActive]}
+                  style={[
+                    styles.periodButton,
+                    chartPeriod === period && styles.periodButtonActive,
+                  ]}
                   onPress={() => setChartPeriod(period)}
                 >
-                  <Text style={[styles.periodButtonText, chartPeriod === period && styles.periodButtonTextActive]}>
+                  <Text
+                    style={[
+                      styles.periodButtonText,
+                      chartPeriod === period && styles.periodButtonTextActive,
+                    ]}
+                  >
                     {period === "weekly" ? "7D" : "MTD"}
                   </Text>
                 </TouchableOpacity>
@@ -698,13 +906,16 @@ export default function FamilyFriendsScreen() {
 
           {currentMembers.length === 0 ? (
             <Text style={styles.emptyChart}>
-              Add a {activeTab === "family" ? "family member" : "friend"} to see mood trends.
+              Add a {activeTab === "family" ? "family member" : "friend"} to see
+              mood trends.
             </Text>
           ) : (
             <View style={styles.chartBody}>
               <View style={[styles.yAxis, { height: CHART_HEIGHT }]}>
                 {[...moodScale].reverse().map((mood) => (
-                  <Text key={mood.level} style={styles.yEmojiLabel}>{mood.emoji}</Text>
+                  <Text key={mood.level} style={styles.yEmojiLabel}>
+                    {mood.emoji}
+                  </Text>
                 ))}
               </View>
 
@@ -713,21 +924,35 @@ export default function FamilyFriendsScreen() {
                   {moodScale.map((mood) => {
                     const y = getMoodY(mood.level as MoodLevel);
                     return (
-                      <Line key={`hg-${mood.level}`}
-                        x1="0" y1={y.toString()} x2={CHART_WIDTH.toString()} y2={y.toString()}
-                        stroke="#F3F4F6" strokeWidth="1"
+                      <Line
+                        key={`hg-${mood.level}`}
+                        x1="0"
+                        y1={y.toString()}
+                        x2={CHART_WIDTH.toString()}
+                        y2={y.toString()}
+                        stroke="#F3F4F6"
+                        strokeWidth="1"
                       />
                     );
                   })}
                   {dateEntries.map((entry, i) => (
-                    <Line key={`vg-${entry.dateStr}`}
-                      x1={(i * xStep).toString()} y1="0"
-                      x2={(i * xStep).toString()} y2={CHART_HEIGHT.toString()}
-                      stroke="#F3F4F6" strokeWidth="1"
+                    <Line
+                      key={`vg-${entry.dateStr}`}
+                      x1={(i * xStep).toString()}
+                      y1="0"
+                      x2={(i * xStep).toString()}
+                      y2={CHART_HEIGHT.toString()}
+                      stroke="#F3F4F6"
+                      strokeWidth="1"
                     />
                   ))}
                   {currentMembers.map((member, index) =>
-                    renderMemberLine(member, MEMBER_COLORS[index % MEMBER_COLORS.length], index, currentMembers.length),
+                    renderMemberLine(
+                      member,
+                      MEMBER_COLORS[index % MEMBER_COLORS.length],
+                      index,
+                      currentMembers.length,
+                    ),
                   )}
                 </Svg>
 
@@ -736,10 +961,14 @@ export default function FamilyFriendsScreen() {
                     .filter((_, i) =>
                       chartPeriod === "weekly"
                         ? true
-                        : i === 0 || i === dateEntries.length - 1 || (i + 1) % 7 === 0,
+                        : i === 0 ||
+                          i === dateEntries.length - 1 ||
+                          (i + 1) % 7 === 0,
                     )
                     .map((entry) => (
-                      <Text key={entry.dateStr} style={styles.xDateLabel}>{entry.label}</Text>
+                      <Text key={entry.dateStr} style={styles.xDateLabel}>
+                        {entry.label}
+                      </Text>
                     ))}
                 </View>
               </View>
@@ -754,21 +983,33 @@ export default function FamilyFriendsScreen() {
 
           // Collect today's moods for all members
           const todayMoods = currentMembers
-            .map((m) => ({ name: getMemberName(m).replace(" (You)", ""), mood: moodData[m.id || ""]?.[todayStr] }))
-            .filter((x) => x.mood !== undefined) as { name: string; mood: MoodLevel }[];
+            .map((m) => ({
+              name: getMemberName(m).replace(" (You)", ""),
+              mood: moodData[m.id || ""]?.[todayStr],
+            }))
+            .filter((x) => x.mood !== undefined) as {
+            name: string;
+            mood: MoodLevel;
+          }[];
 
           const moodEmojiMap: Record<MoodLevel, string> = moodEmojiByLevel;
 
           let insight = "";
           if (todayMoods.length === 0) {
-            insight = peers.length === 0
-              ? `Add ${label.toLowerCase()} members to compare moods and see insights here.`
-              : `No moods logged yet today. Check back after your ${label.toLowerCase()} have tracked their day.`;
+            insight =
+              peers.length === 0
+                ? `Add ${label.toLowerCase()} members to compare moods and see insights here.`
+                : `No moods logged yet today. Check back after your ${label.toLowerCase()} have tracked their day.`;
           } else {
-            const avg = todayMoods.reduce((s, x) => s + x.mood, 0) / todayMoods.length;
+            const avg =
+              todayMoods.reduce((s, x) => s + x.mood, 0) / todayMoods.length;
             const avgRounded = Math.round(avg) as MoodLevel;
-            const topMember = [...todayMoods].sort((a, b) => b.mood - a.mood)[0];
-            const lowMember = [...todayMoods].sort((a, b) => a.mood - b.mood)[0];
+            const topMember = [...todayMoods].sort(
+              (a, b) => b.mood - a.mood,
+            )[0];
+            const lowMember = [...todayMoods].sort(
+              (a, b) => a.mood - b.mood,
+            )[0];
             const emoji = moodEmojiMap[avgRounded];
             if (todayMoods.length === 1) {
               insight = `${topMember.name} is feeling ${moodEmojiMap[topMember.mood]} today. Keep the connection going — a quick message goes a long way!`;
@@ -810,34 +1051,62 @@ export default function FamilyFriendsScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={{ flexDirection: "row", gap: 12, paddingVertical: 4 }}>
               {currentMembers.map((member, index) => {
-                const color     = MEMBER_COLORS[index % MEMBER_COLORS.length];
-                const store     = moodData[member.id || ""] || {};
+                const color = MEMBER_COLORS[index % MEMBER_COLORS.length];
+                const store = moodData[member.id || ""] || {};
                 const todayMood = store[todayStr];
                 return (
                   <View key={member.id} style={styles.memberCard}>
-                    <View style={[styles.memberInitialsCircle, { backgroundColor: color + "22", borderColor: color }]}>
-                      <Text style={[styles.memberInitialsText, { color }]}>{getInitials(member)}</Text>
+                    <View
+                      style={[
+                        styles.memberInitialsCircle,
+                        { backgroundColor: color + "22", borderColor: color },
+                      ]}
+                    >
+                      <Text style={[styles.memberInitialsText, { color }]}>
+                        {getInitials(member)}
+                      </Text>
                     </View>
                     <Text style={styles.memberCardName} numberOfLines={1}>
                       {getMemberName(member).replace(" (You)", "")}
                     </Text>
                     <Text style={styles.memberCardRole} numberOfLines={1}>
-                      {member.isYou ? "You ★" : member.role || (activeTab === "family" ? "Family" : "Friend")}
+                      {member.isYou
+                        ? "You ★"
+                        : member.role ||
+                          (activeTab === "family" ? "Family" : "Friend")}
                     </Text>
                     {todayMood && (
-                      <Text style={styles.todayMoodEmoji}>{moodEmojiByLevel[todayMood]}</Text>
+                      <Text style={styles.todayMoodEmoji}>
+                        {moodEmojiByLevel[todayMood]}
+                      </Text>
                     )}
                     {!member.isYou && (
                       <View style={styles.memberCardActions}>
-                        <TouchableOpacity style={styles.cardIconBtn} onPress={() => moveMember(member)}>
-                          <Ionicons name="swap-horizontal-outline" size={14} color={Colors.primary} />
+                        <TouchableOpacity
+                          style={styles.cardIconBtn}
+                          onPress={() => moveMember(member)}
+                        >
+                          <Ionicons
+                            name="swap-horizontal-outline"
+                            size={14}
+                            color={Colors.primary}
+                          />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.cardIconBtn} onPress={() => deleteMember(member)}>
-                          <Ionicons name="trash-outline" size={14} color={Colors.error} />
+                        <TouchableOpacity
+                          style={styles.cardIconBtn}
+                          onPress={() => deleteMember(member)}
+                        >
+                          <Ionicons
+                            name="trash-outline"
+                            size={14}
+                            color={Colors.error}
+                          />
                         </TouchableOpacity>
                       </View>
                     )}
-                    <View style={[styles.colorStrip, { backgroundColor: color }]} />
+                    <View
+                      style={[styles.colorStrip, { backgroundColor: color }]}
+                    />
                   </View>
                 );
               })}
@@ -852,7 +1121,9 @@ export default function FamilyFriendsScreen() {
             <View style={styles.toggleRow}>
               <View style={styles.toggleInfo}>
                 <Text style={styles.toggleLabel}>Share my mood</Text>
-                <Text style={styles.toggleSub}>Show my line on others' charts</Text>
+                <Text style={styles.toggleSub}>
+                  Show my line on others' charts
+                </Text>
               </View>
               <Switch
                 value={shareMood}
@@ -878,7 +1149,12 @@ export default function FamilyFriendsScreen() {
       </ScrollView>
 
       {/* QR Invite / Scan Modal */}
-      <Modal visible={showQRModal} transparent animationType="slide" onRequestClose={() => setShowQRModal(false)}>
+      <Modal
+        visible={showQRModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowQRModal(false)}
+      >
         <View style={styles.qrOverlay}>
           <View style={styles.qrSheet}>
             {/* Header */}
@@ -886,7 +1162,12 @@ export default function FamilyFriendsScreen() {
               <Text style={styles.qrTitle}>
                 {qrMode === "show" ? "My Invite QR" : "Scan QR Code"}
               </Text>
-              <TouchableOpacity onPress={() => { setShowQRModal(false); setScanned(false); }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowQRModal(false);
+                  setScanned(false);
+                }}
+              >
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
             </View>
@@ -894,14 +1175,34 @@ export default function FamilyFriendsScreen() {
             {/* Toggle show/scan */}
             <View style={styles.qrToggleRow}>
               <TouchableOpacity
-                style={[styles.qrToggleBtn, qrMode === "show" && styles.qrToggleBtnActive]}
-                onPress={() => { setQrMode("show"); setScanned(false); }}
+                style={[
+                  styles.qrToggleBtn,
+                  qrMode === "show" && styles.qrToggleBtnActive,
+                ]}
+                onPress={() => {
+                  setQrMode("show");
+                  setScanned(false);
+                }}
               >
-                <Ionicons name="qr-code" size={16} color={qrMode === "show" ? "#fff" : Colors.textMuted} />
-                <Text style={[styles.qrToggleText, qrMode === "show" && styles.qrToggleTextActive]}>My QR</Text>
+                <Ionicons
+                  name="qr-code"
+                  size={16}
+                  color={qrMode === "show" ? "#fff" : Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.qrToggleText,
+                    qrMode === "show" && styles.qrToggleTextActive,
+                  ]}
+                >
+                  My QR
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.qrToggleBtn, qrMode === "scan" && styles.qrToggleBtnActive]}
+                style={[
+                  styles.qrToggleBtn,
+                  qrMode === "scan" && styles.qrToggleBtnActive,
+                ]}
                 onPress={async () => {
                   if (!cameraPermission?.granted) {
                     await requestCameraPermission();
@@ -910,8 +1211,19 @@ export default function FamilyFriendsScreen() {
                   setScanned(false);
                 }}
               >
-                <Ionicons name="scan" size={16} color={qrMode === "scan" ? "#fff" : Colors.textMuted} />
-                <Text style={[styles.qrToggleText, qrMode === "scan" && styles.qrToggleTextActive]}>Scan</Text>
+                <Ionicons
+                  name="scan"
+                  size={16}
+                  color={qrMode === "scan" ? "#fff" : Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.qrToggleText,
+                    qrMode === "scan" && styles.qrToggleTextActive,
+                  ]}
+                >
+                  Scan
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -926,20 +1238,32 @@ export default function FamilyFriendsScreen() {
                       backgroundColor="#fff"
                     />
                     <Text style={styles.qrHint}>
-                      Ask someone to scan this to add you instantly — no approval needed.
+                      Ask someone to scan this to add you instantly — no
+                      approval needed.
                     </Text>
                   </>
                 ) : (
-                  <Text style={styles.qrHint}>Sign in to generate your QR code.</Text>
+                  <Text style={styles.qrHint}>
+                    Sign in to generate your QR code.
+                  </Text>
                 )}
               </View>
             ) : (
               <View style={styles.scannerBox}>
                 {!cameraPermission?.granted ? (
                   <View style={styles.permissionBox}>
-                    <Ionicons name="camera-outline" size={40} color={Colors.textMuted} />
-                    <Text style={styles.permissionText}>Camera permission is required to scan QR codes.</Text>
-                    <TouchableOpacity style={styles.permissionBtn} onPress={requestCameraPermission}>
+                    <Ionicons
+                      name="camera-outline"
+                      size={40}
+                      color={Colors.textMuted}
+                    />
+                    <Text style={styles.permissionText}>
+                      Camera permission is required to scan QR codes.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.permissionBtn}
+                      onPress={requestCameraPermission}
+                    >
                       <Text style={styles.permissionBtnText}>Allow Camera</Text>
                     </TouchableOpacity>
                   </View>
@@ -959,24 +1283,37 @@ export default function FamilyFriendsScreen() {
                     <View style={styles.scanOverlay}>
                       <View style={styles.scanFrame} />
                     </View>
-                    <Text style={styles.scanHint}>Point at a MoodBoard QR code to add them directly.</Text>
+                    <Text style={styles.scanHint}>
+                      Point at a MoodBoard QR code to add them directly.
+                    </Text>
                     {/* Add-as selector */}
                     <View style={styles.scanRelRow}>
                       <Text style={styles.scanRelLabel}>Add as:</Text>
                       {(["family", "friends"] as const).map((rel) => (
                         <TouchableOpacity
                           key={rel}
-                          style={[styles.scanRelBtn, scanRelType === rel && styles.scanRelBtnActive]}
+                          style={[
+                            styles.scanRelBtn,
+                            scanRelType === rel && styles.scanRelBtnActive,
+                          ]}
                           onPress={() => setScanRelType(rel)}
                         >
-                          <Text style={[styles.scanRelText, scanRelType === rel && styles.scanRelTextActive]}>
+                          <Text
+                            style={[
+                              styles.scanRelText,
+                              scanRelType === rel && styles.scanRelTextActive,
+                            ]}
+                          >
                             {rel === "family" ? "Family" : "Friend"}
                           </Text>
                         </TouchableOpacity>
                       ))}
                     </View>
                     {scanned && (
-                      <TouchableOpacity style={styles.rescanBtn} onPress={() => setScanned(false)}>
+                      <TouchableOpacity
+                        style={styles.rescanBtn}
+                        onPress={() => setScanned(false)}
+                      >
                         <Text style={styles.rescanText}>Tap to scan again</Text>
                       </TouchableOpacity>
                     )}
@@ -1003,7 +1340,12 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "700", color: Colors.textPrimary },
 
   tabRow: { flexDirection: "row", justifyContent: "center", marginBottom: 10 },
-  tab: { marginHorizontal: 10, paddingBottom: 4, borderBottomWidth: 2, borderColor: "transparent" },
+  tab: {
+    marginHorizontal: 10,
+    paddingBottom: 4,
+    borderBottomWidth: 2,
+    borderColor: "transparent",
+  },
   tabActive: { borderColor: Colors.primary },
   tabText: { fontWeight: "400", color: Colors.textPrimary, fontSize: 16 },
   tabTextActive: { fontWeight: "700" },
@@ -1032,7 +1374,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.primaryLight,
   },
-  searchTitle: { fontSize: 14, fontWeight: "700", color: Colors.primary, marginBottom: 12 },
+  searchTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginBottom: 12,
+  },
   searchItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -1040,15 +1387,25 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   searchUser: { flexDirection: "row", alignItems: "center", gap: 10 },
-  initialsCircle: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  initialsCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   initialsText: { fontSize: 13, fontWeight: "700" },
   searchName: { fontSize: 14, fontWeight: "600", color: Colors.textPrimary },
   searchEmail: { fontSize: 12, color: Colors.textMuted },
   searchActions: { flexDirection: "row", gap: 8 },
   addChoiceBtn: {
-    minWidth: 56, height: 30, borderRadius: 15,
+    minWidth: 56,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: Colors.primaryLight,
-    alignItems: "center", justifyContent: "center", paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
   },
   addChoiceText: { color: Colors.primary, fontSize: 12, fontWeight: "700" },
 
@@ -1058,43 +1415,88 @@ const styles = StyleSheet.create({
     padding: 14,
     paddingBottom: 18,
     ...Platform.select({
-      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+      },
       android: { elevation: 2 },
     }),
   },
   chartHeader: {
-    flexDirection: "row", alignItems: "flex-start",
-    justifyContent: "space-between", gap: 10, marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 10,
   },
-  chartTitle:    { fontSize: 14, fontWeight: "700", color: Colors.textPrimary },
+  chartTitle: { fontSize: 14, fontWeight: "700", color: Colors.textPrimary },
   chartSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  periodToggle:  { flexDirection: "row", backgroundColor: "#F3F4F6", borderRadius: 8, padding: 2 },
-  periodButton:  { paddingHorizontal: 8, height: 26, borderRadius: 6, alignItems: "center", justifyContent: "center" },
-  periodButtonActive:     { backgroundColor: Colors.white },
-  periodButtonText:       { fontSize: 11, fontWeight: "700", color: Colors.textMuted },
+  periodToggle: {
+    flexDirection: "row",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 8,
+    padding: 2,
+  },
+  periodButton: {
+    paddingHorizontal: 8,
+    height: 26,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  periodButtonActive: { backgroundColor: Colors.white },
+  periodButtonText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textMuted,
+  },
   periodButtonTextActive: { color: Colors.primary },
-  emptyChart: { textAlign: "center", color: Colors.textMuted, fontSize: 13, paddingVertical: 30 },
-  chartBody:  { flexDirection: "row", alignItems: "flex-start" },
+  emptyChart: {
+    textAlign: "center",
+    color: Colors.textMuted,
+    fontSize: 13,
+    paddingVertical: 30,
+  },
+  chartBody: { flexDirection: "row", alignItems: "flex-start" },
   yAxis: { justifyContent: "space-between", paddingRight: 6, width: 30 },
   yEmojiLabel: { fontSize: 15, textAlign: "center" },
-  xAxis: { flexDirection: "row", justifyContent: "space-between", marginTop: 6, paddingHorizontal: 2 },
+  xAxis: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
   xDateLabel: { fontSize: 9, color: Colors.textSecondary, textAlign: "center" },
 
-  aiCard:  { backgroundColor: "#F3F4F6", borderRadius: 14, padding: 14 },
-  aiTitle: { fontWeight: "700", fontSize: 14, color: Colors.primary, marginBottom: 4 },
-  aiBody:  { color: Colors.textSecondary, fontSize: 12 },
+  aiCard: { backgroundColor: "#F3F4F6", borderRadius: 14, padding: 14 },
+  aiTitle: {
+    fontWeight: "700",
+    fontSize: 14,
+    color: Colors.primary,
+    marginBottom: 4,
+  },
+  aiBody: { color: Colors.textSecondary, fontSize: 12 },
 
   memberSection: {},
   memberSectionHeader: {
-    flexDirection: "row", alignItems: "center",
-    justifyContent: "space-between", marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
   },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: Colors.textPrimary },
   inviteButton: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingVertical: 6, paddingHorizontal: 12,
-    borderRadius: 10, borderWidth: 1,
-    borderColor: "#E9D5FF", backgroundColor: "#FAF5FF",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E9D5FF",
+    backgroundColor: "#FAF5FF",
   },
   inviteButtonText: { color: "#5B21B6", fontWeight: "600", fontSize: 12 },
 
@@ -1102,29 +1504,54 @@ const styles = StyleSheet.create({
     width: 96,
     backgroundColor: Colors.white,
     borderRadius: 14,
-    paddingTop: 12, paddingHorizontal: 10, paddingBottom: 16,
+    paddingTop: 12,
+    paddingHorizontal: 10,
+    paddingBottom: 16,
     alignItems: "center",
     overflow: "hidden",
     ...Platform.select({
-      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6 },
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
+      },
       android: { elevation: 2 },
     }),
   },
   memberInitialsCircle: {
-    width: 48, height: 48, borderRadius: 24,
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 2, marginBottom: 6,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    marginBottom: 6,
   },
   memberInitialsText: { fontSize: 17, fontWeight: "700" },
-  memberCardName: { fontSize: 11, fontWeight: "700", color: Colors.textPrimary, textAlign: "center" },
-  memberCardRole: { fontSize: 10, color: Colors.textSecondary, textAlign: "center", marginTop: 1 },
+  memberCardName: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textPrimary,
+    textAlign: "center",
+  },
+  memberCardRole: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    marginTop: 1,
+  },
   todayMoodEmoji: { fontSize: 18, marginTop: 4 },
   memberCardActions: { flexDirection: "row", gap: 6, marginTop: 8 },
   cardIconBtn: {
-    width: 26, height: 26, borderRadius: 7,
+    width: 26,
+    height: 26,
+    borderRadius: 7,
     backgroundColor: "#F9FAFB",
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   colorStrip: { position: "absolute", bottom: 0, left: 0, right: 0, height: 3 },
 
@@ -1134,14 +1561,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
     ...Platform.select({
-      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+      },
       android: { elevation: 2 },
     }),
   },
-  toggleRow:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  toggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   toggleInfo: { flex: 1 },
   toggleLabel: { fontSize: 13, fontWeight: "700", color: Colors.textPrimary },
-  toggleSub:   { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  toggleSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
 
   // QR Modal
   qrOverlay: {
@@ -1174,15 +1610,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   qrToggleBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 6, paddingVertical: 10, borderRadius: 10,
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   qrToggleBtnActive: { backgroundColor: Colors.primary },
   qrToggleText: { fontSize: 13, fontWeight: "600", color: Colors.textMuted },
   qrToggleTextActive: { color: "#fff" },
 
   qrCodeBox: { alignItems: "center", gap: 16, paddingVertical: 10 },
-  qrHint: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", paddingHorizontal: 16 },
+  qrHint: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    paddingHorizontal: 16,
+  },
 
   scannerBox: { alignItems: "center", gap: 12, position: "relative" },
   camera: { width: "100%", height: 260, borderRadius: 16, overflow: "hidden" },
@@ -1200,24 +1646,49 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   scanHint: { fontSize: 12, color: Colors.textSecondary, textAlign: "center" },
-  scanRelRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  scanRelLabel: { fontSize: 13, color: Colors.textSecondary, fontWeight: "600" },
-  scanRelBtn: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white,
+  scanRelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
   },
-  scanRelBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  scanRelLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: "600",
+  },
+  scanRelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+  },
+  scanRelBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
   scanRelText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
   scanRelTextActive: { color: "#fff" },
   rescanBtn: {
-    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
     backgroundColor: Colors.primaryLight,
   },
   rescanText: { fontSize: 13, fontWeight: "600", color: Colors.primary },
   permissionBox: { alignItems: "center", gap: 12, paddingVertical: 20 },
-  permissionText: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  permissionText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: "center",
+  },
   permissionBtn: {
-    backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   permissionBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 });

@@ -9,6 +9,7 @@ export interface MoodEntry {
   note: string;
   tags: string[];
   createdAt: number; // timestamp
+  timeZone?: string; // IANA timezone used when the entry was logged
 }
 
 export interface MoodConfig {
