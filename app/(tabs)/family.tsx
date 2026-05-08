@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -271,6 +271,36 @@ export default function FamilyFriendsScreen() {
       }
     })();
   }, [adminMember.id]); // re-run on user change (login/logout)
+
+  // Re-fetch accepted connections on tab focus so both sides see each other
+  // immediately after a request is accepted in the Notifications tab
+  useFocusEffect(
+    useCallback(() => {
+      const uid = adminMember.id;
+      if (!uid || uid === "you" || !readyToSaveRef.current) return;
+      (async () => {
+        try {
+          const connections = await getAcceptedConnections(uid);
+          connections.forEach(({ profile, relationshipType }) => {
+            const member: CircleMember = {
+              ...profile,
+              role: relationshipType === 'family' ? 'Family' : 'Friend',
+              isYou: false,
+            };
+            if (relationshipType === 'family') {
+              setFamilyMembers((prev) =>
+                prev.some((m) => m.id === profile.id) ? prev : [...prev, member]
+              );
+            } else {
+              setFriendMembers((prev) =>
+                prev.some((m) => m.id === profile.id) ? prev : [...prev, member]
+              );
+            }
+          });
+        } catch {}
+      })();
+    }, [adminMember.id])
+  );
 
   // ── keep admin profile name/avatar current in both lists ──────────────────────
   useEffect(() => {
