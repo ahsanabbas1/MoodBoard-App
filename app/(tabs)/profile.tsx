@@ -23,6 +23,15 @@ import { useMood } from "../../store/MoodContext";
 import { useAuth } from "../../store/AuthContext";
 import { getMoodConfig } from "../../constants/Moods";
 import { MoodLevel } from "../../types";
+import type { LocationSharing } from "../../types/auth";
+import {
+  scheduleReminder,
+  disableReminder,
+  isReminderEnabled,
+  formatReminderTime,
+  NOTIFICATIONS_SUPPORTED,
+} from "../../services/reminderService";
+import { clearMyLocation } from "../../services/locationService";
 
 interface SettingRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -92,8 +101,12 @@ export default function ProfileScreen() {
   const router = useRouter();
 
   const [notifications, setNotifications] = useState(true);
-  const [dailyReminder, setDailyReminder] = useState(true);
+  const [dailyReminder, setDailyReminder] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [locationSharing, setLocationSharing] =
+    useState<LocationSharing>("none");
+  const [locationSharingModalOpen, setLocationSharingModalOpen] =
+    useState(false);
 
   // Edit Name State
   const [isEditingName, setIsEditingName] = useState(false);
@@ -107,28 +120,60 @@ export default function ProfileScreen() {
   // Load persisted prefs when user is known
   useEffect(() => {
     if (!user?.id) return;
-    AsyncStorage.getItem(skProfilePrefs(user.id))
-      .then((raw) => {
+    const uid = user.id;
+    Promise.all([
+      AsyncStorage.getItem(skProfilePrefs(uid)),
+      isReminderEnabled(uid),
+    ])
+      .then(([raw, reminderOn]) => {
         if (raw) {
           const prefs = JSON.parse(raw);
           if (prefs.notifications !== undefined)
             setNotifications(prefs.notifications);
-          if (prefs.dailyReminder !== undefined)
-            setDailyReminder(prefs.dailyReminder);
         }
+        setDailyReminder(reminderOn);
+        // Load location sharing preference from Supabase profile
+        if (user.locationSharing) setLocationSharing(user.locationSharing);
       })
       .catch(() => {})
       .finally(() => setPrefsLoaded(true));
   }, [user?.id]);
 
-  // Persist prefs on change
+  // Persist misc prefs on change
   useEffect(() => {
     if (!prefsLoaded || !user?.id) return;
     AsyncStorage.setItem(
       skProfilePrefs(user.id),
-      JSON.stringify({ notifications, dailyReminder }),
+      JSON.stringify({ notifications }),
     ).catch(() => {});
-  }, [notifications, dailyReminder, prefsLoaded]);
+  }, [notifications, prefsLoaded]);
+
+  async function handleReminderToggle(enabled: boolean) {
+    setDailyReminder(enabled);
+    if (!user?.id) return;
+    if (enabled) {
+      const ok = await scheduleReminder(user.id, 20, 0);
+      if (!ok) {
+        setDailyReminder(false);
+        Alert.alert(
+          "Permission needed",
+          "Please allow notifications in your device settings to enable daily reminders.",
+        );
+      }
+    } else {
+      await disableReminder(user.id);
+    }
+  }
+
+  async function handleLocationSharingChange(value: LocationSharing) {
+    setLocationSharing(value);
+    setLocationSharingModalOpen(false);
+    if (!user?.id) return;
+    if (value === "none") {
+      await clearMyLocation(user.id);
+    }
+    await updateProfile({ locationSharing: value });
+  }
 
   const streak = getStreak();
   const avg30 = getAverageMood(30);
@@ -353,20 +398,166 @@ export default function ProfileScreen() {
             <SettingRow
               icon="notifications"
               label="Push Notifications"
-              subtitle="Receive mood reminders"
+              subtitle="Receive mood reminders and activity alerts"
               value={notifications}
               onToggle={setNotifications}
             />
             <View style={styles.divider} />
-            <SettingRow
-              icon="alarm"
-              label="Daily Reminder"
-              subtitle="Remind me to log my mood at 8:00 PM"
-              value={dailyReminder}
-              onToggle={setDailyReminder}
-            />
+            {NOTIFICATIONS_SUPPORTED ? (
+              <SettingRow
+                icon="alarm"
+                label="Daily Mood Reminder"
+                subtitle={`Scheduled at ${formatReminderTime(20)} — reminds you to log each day`}
+                value={dailyReminder}
+                onToggle={handleReminderToggle}
+              />
+            ) : (
+              <SettingRow
+                icon="alarm"
+                label="Daily Mood Reminder"
+                subtitle="Requires a development build — not available in Expo Go"
+                onPress={() =>
+                  Alert.alert(
+                    "Dev Build Required",
+                    "Daily reminders use local scheduled notifications which require a development build (eas build). They are not available in Expo Go since SDK 53.",
+                  )
+                }
+              />
+            )}
           </View>
         </View>
+
+        {/* Location Sharing */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Location Sharing</Text>
+          <View style={styles.settingsCard}>
+            <SettingRow
+              icon="location"
+              label="Share My Location"
+              subtitle={
+                locationSharing === "none"
+                  ? "Off — not sharing with anyone"
+                  : locationSharing === "all"
+                    ? "On — shared with everyone in your circles"
+                    : locationSharing === "family_only"
+                      ? "On — family members only"
+                      : locationSharing === "friends_only"
+                        ? "On — friends only"
+                        : "On — shared with selected people"
+              }
+              onPress={() => setLocationSharingModalOpen(true)}
+            />
+          </View>
+          <Text style={styles.sectionNote}>
+            Location is updated when you open the app and only visible to people
+            you choose.
+          </Text>
+        </View>
+
+        {/* Location Sharing Modal */}
+        <Modal
+          visible={locationSharingModalOpen}
+          animationType="slide"
+          transparent
+          presentationStyle="overFullScreen"
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Who can see your location?</Text>
+              <Text style={styles.modalSubtitle}>
+                Your location is refreshed each time you open the app.
+              </Text>
+              {(
+                [
+                  {
+                    value: "none",
+                    label: "No one",
+                    icon: "eye-off-outline",
+                    desc: "Location is hidden from everyone",
+                  },
+                  {
+                    value: "all",
+                    label: "Everyone in circles",
+                    icon: "people-outline",
+                    desc: "All accepted friends & family",
+                  },
+                  {
+                    value: "family_only",
+                    label: "Family only",
+                    icon: "home-outline",
+                    desc: "Only members of your Family circle",
+                  },
+                  {
+                    value: "friends_only",
+                    label: "Friends only",
+                    icon: "person-outline",
+                    desc: "Only members of your Friends circle",
+                  },
+                ] as {
+                  value: LocationSharing;
+                  label: string;
+                  icon: any;
+                  desc: string;
+                }[]
+              ).map((opt) => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.sharingOption,
+                    locationSharing === opt.value && styles.sharingOptionActive,
+                  ]}
+                  onPress={() => handleLocationSharingChange(opt.value)}
+                  activeOpacity={0.75}
+                >
+                  <View
+                    style={[
+                      styles.sharingOptionIcon,
+                      locationSharing === opt.value &&
+                        styles.sharingOptionIconActive,
+                    ]}
+                  >
+                    <Ionicons
+                      name={opt.icon}
+                      size={20}
+                      color={
+                        locationSharing === opt.value
+                          ? "#fff"
+                          : Colors.textSecondary
+                      }
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.sharingOptionLabel,
+                        locationSharing === opt.value && {
+                          color: Colors.primary,
+                        },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                    <Text style={styles.sharingOptionDesc}>{opt.desc}</Text>
+                  </View>
+                  {locationSharing === opt.value && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color={Colors.primary}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={() => setLocationSharingModalOpen(false)}
+              >
+                <Text style={styles.modalCloseText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* Preferences */}
         <View style={styles.section}>
@@ -444,7 +635,7 @@ export default function ProfileScreen() {
             <SettingRow
               icon="information-circle"
               label="Version"
-              subtitle="1.0.0"
+              subtitle="2.0.0"
             />
             <View style={styles.divider} />
             <SettingRow
@@ -665,6 +856,74 @@ const styles = StyleSheet.create({
   settingLabel: { fontSize: 15, fontWeight: "600", color: Colors.textPrimary },
   settingSubtitle: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
   divider: { height: 1, backgroundColor: Colors.border, marginLeft: 66 },
+  sectionNote: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 6,
+    paddingHorizontal: 4,
+    lineHeight: 17,
+  },
+
+  // Location sharing modal styles
+  modalSheet: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 32,
+    gap: 10,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: "center",
+    marginBottom: 10,
+  },
+  modalSubtitle: { fontSize: 13, color: Colors.textMuted, marginBottom: 4 },
+  sharingOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: Colors.card,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  sharingOptionActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+  },
+  sharingOptionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sharingOptionIconActive: { backgroundColor: Colors.primary },
+  sharingOptionLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.textPrimary,
+  },
+  sharingOptionDesc: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  modalClose: {
+    marginTop: 6,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: Colors.card,
+    alignItems: "center",
+  },
+  modalCloseText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
 
   footer: {
     textAlign: "center",
@@ -675,9 +934,8 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    padding: 20,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: Colors.white,

@@ -10,6 +10,10 @@ export interface MoodEntry {
   tags: string[];
   createdAt: number; // timestamp
   timeZone?: string; // IANA timezone used when the entry was logged
+  // Emotion wheel fields (optional — absent on entries logged before the wheel feature)
+  emotionLabel?: string; // e.g. "Joyful"
+  emotionCore?: string;  // e.g. "Happy"
+  emotionEmoji?: string; // e.g. "😄"
 }
 
 export interface MoodConfig {

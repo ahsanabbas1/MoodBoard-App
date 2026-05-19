@@ -9,46 +9,75 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import AnimatedEmoji from "../../components/AnimatedEmoji";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { Colors } from "../../constants/Colors";
-import { MOODS, TAGS } from "../../constants/Moods";
 import { useMood } from "../../store/MoodContext";
+import { toDateString } from "../../utils/date";
+import { CORE_TO_MOOD_LEVEL, EMOTION_WHEEL } from "../../constants/EmotionWheel";
 import { MoodLevel } from "../../types";
+import type { EmotionSelection } from "../../constants/EmotionWheel";
+import EmotionWheelPicker from "../../components/EmotionWheelPicker";
+import DatePickerModal from "../../components/DatePickerModal";
+import TagSelector from "../../components/TagSelector";
 
 export default function LogScreen() {
   const router = useRouter();
-  const { addEntry, getTodayEntry } = useMood();
+  const { addEntry, entries, getEntriesForDate } = useMood();
 
-  const [selectedMood, setSelectedMood] = useState<MoodLevel | null>(null);
+  const [selectedEmotion, setSelectedEmotion] = useState<EmotionSelection | null>(null);
   const [intensity, setIntensity] = useState(5);
   const [note, setNote] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>(toDateString());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const todayEntry = getTodayEntry();
+  const isToday = selectedDate === toDateString();
 
-  function toggleTag(tag: string) {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
-    );
-  }
+  const loggedDates = useMemo(
+    () => new Set(entries.map((e) => e.date)),
+    [entries],
+  );
+
+  const existingForDate = getEntriesForDate(selectedDate);
+
+  // ── Derived display values ──────────────────────────────────────────────────
+
+  const selectedCore = selectedEmotion
+    ? EMOTION_WHEEL.find((c) => c.label === selectedEmotion.core)
+    : null;
+
+  const intensityLabel = useMemo(() => {
+    if (intensity <= 2) return 'Very mild';
+    if (intensity <= 4) return 'Mild';
+    if (intensity <= 6) return 'Moderate';
+    if (intensity <= 8) return 'Strong';
+    return 'Very intense';
+  }, [intensity]);
+
+  const dateDisplayLabel = useMemo(() => {
+    if (isToday) return 'Today';
+    const d = new Date(selectedDate + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }, [selectedDate, isToday]);
+
+  // ── Save logic ──────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (!selectedMood) {
-      Alert.alert("Select a mood", "Please choose how you are feeling today.");
+    if (!selectedEmotion) {
+      Alert.alert("Select an emotion", "Please tap the wheel to choose how you are feeling.");
       return;
     }
 
-    if (todayEntry) {
+    if (existingForDate.length > 0) {
       Alert.alert(
-        "Already logged today",
-        "You've already logged your mood today. Would you like to add another entry?",
+        "Already logged",
+        `You already have ${existingForDate.length === 1 ? 'an entry' : 'entries'} for ${isToday ? 'today' : dateDisplayLabel}. Add another?`,
         [
           { text: "Cancel", style: "cancel" },
           { text: "Add anyway", onPress: save },
@@ -62,18 +91,26 @@ export default function LogScreen() {
 
   async function save() {
     setSaving(true);
+    const moodLevel = (CORE_TO_MOOD_LEVEL[selectedEmotion!.core] ?? 3) as MoodLevel;
     const normalizedIntensity = Math.min(10, Math.max(0, intensity));
+
     await addEntry(
-      selectedMood!,
+      moodLevel,
       normalizedIntensity,
       note.trim(),
       selectedTags,
+      selectedEmotion!.label,
+      selectedEmotion!.core,
+      selectedEmotion!.emoji,
+      selectedDate,
     );
+
     setSaving(false);
-    setSelectedMood(null);
+    setSelectedEmotion(null);
     setIntensity(5);
     setNote("");
     setSelectedTags([]);
+    setSelectedDate(toDateString());
     router.replace("/(tabs)");
   }
 
@@ -89,83 +126,84 @@ export default function LogScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header */}
+          {/* ── Header ──────────────────────────────────────────────────────── */}
           <View style={styles.header}>
-            <Text style={styles.title}>How are you{"\n"}feeling today?</Text>
-            <Text style={styles.subtitle}>
-              {new Date().toLocaleDateString("en-US", {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-              })}
+            <View style={styles.headerTop}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.title}>
+                  {isToday
+                    ? `How are you\nfeeling today?`
+                    : `How were you\nfeeling on ${dateDisplayLabel}?`}
+                </Text>
+              </View>
+              {/* Date chip */}
+              <TouchableOpacity
+                style={[styles.dateChip, !isToday && styles.dateChipPast]}
+                onPress={() => setDatePickerOpen(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={isToday ? Colors.textSecondary : Colors.primary}
+                />
+                <Text style={[styles.dateChipText, !isToday && styles.dateChipTextPast]}>
+                  {dateDisplayLabel}
+                </Text>
+                <Ionicons
+                  name="chevron-down"
+                  size={12}
+                  color={isToday ? Colors.textMuted : Colors.primary}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* ── Emotion Wheel ────────────────────────────────────────────────── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>How do you feel?</Text>
+            <Text style={styles.sectionHint}>
+              Tap any ring — inner for broad, outer for detailed
             </Text>
-          </View>
-
-          {/* Mood Selector */}
-          <View style={styles.moodGrid}>
-            {MOODS.map((mood) => {
-              const isSelected = selectedMood === mood.level;
-              return (
-                <TouchableOpacity
-                  key={mood.level}
-                  style={[
-                    styles.moodOption,
-                    isSelected && { borderColor: mood.color, borderWidth: 2.5 },
-                    {
-                      backgroundColor: isSelected ? mood.bgColor : Colors.card,
-                    },
-                  ]}
-                  activeOpacity={0.75}
-                  onPress={() => setSelectedMood(mood.level as MoodLevel)}
-                >
-                  {isSelected && (
-                    <LinearGradient
-                      colors={mood.gradientColors}
-                      style={styles.moodSelectedOverlay}
-                    />
-                  )}
-                  <AnimatedEmoji
-                    emoji={mood.emoji}
-                    type="springSelect"
-                    selected={isSelected}
-                    style={styles.moodEmoji}
-                  />
-                  <Text
-                    style={[
-                      styles.moodLabel,
-                      { color: isSelected ? mood.color : Colors.textSecondary },
-                    ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {mood.label}
+            <View style={styles.wheelContainer}>
+              <EmotionWheelPicker
+                selection={selectedEmotion}
+                onSelect={setSelectedEmotion}
+              />
+            </View>
+            {selectedEmotion && (
+              <View style={[styles.selectionCard, { borderColor: selectedCore?.color ?? Colors.border }]}>
+                <Text style={styles.selectionEmoji}>{selectedEmotion.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.selectionLabel, { color: selectedCore?.color }]}>
+                    {selectedEmotion.label}
                   </Text>
-                  {isSelected && (
-                    <View
-                      style={[
-                        styles.checkmark,
-                        { backgroundColor: mood.color },
-                      ]}
-                    >
-                      <Ionicons name="checkmark" size={10} color="#fff" />
-                    </View>
+                  {selectedEmotion.label !== selectedEmotion.core && (
+                    <Text style={styles.selectionCore}>{selectedEmotion.core}</Text>
                   )}
+                </View>
+                <TouchableOpacity onPress={() => setSelectedEmotion(null)}>
+                  <Ionicons name="close-circle-outline" size={20} color={Colors.textMuted} />
                 </TouchableOpacity>
-              );
-            })}
+              </View>
+            )}
           </View>
 
-          {/* Intensity Slider */}
+          {/* ── Intensity Slider ─────────────────────────────────────────────── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>Mood Intensity</Text>
-              <View style={styles.intensityBadge}>
-                <Text style={styles.intensityBadgeText}>{intensity}/10</Text>
+              <Text style={styles.sectionLabel}>Intensity</Text>
+              <View style={[styles.intensityBadge, { backgroundColor: selectedCore?.color ?? Colors.primaryLight }]}>
+                <Text style={styles.intensityBadgeText}>{intensity}/10 · {intensityLabel}</Text>
               </View>
             </View>
             <View style={styles.sliderWrapper}>
               <LinearGradient
-                colors={["#EF4444", "#EAB308", "#22C55E"]}
+                colors={
+                  selectedCore
+                    ? [selectedCore.terColor, selectedCore.secColor, selectedCore.color]
+                    : ["#EF4444", "#EAB308", "#22C55E"]
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.sliderGradient}
@@ -179,16 +217,16 @@ export default function LogScreen() {
                 onValueChange={setIntensity}
                 minimumTrackTintColor="transparent"
                 maximumTrackTintColor="transparent"
-                thumbTintColor={Colors.primary}
+                thumbTintColor={selectedCore?.color ?? Colors.primary}
               />
             </View>
             <View style={styles.sliderLabels}>
-              <Text style={styles.sliderLabel}>Dull</Text>
-              <Text style={styles.sliderLabel}>Bright</Text>
+              <Text style={styles.sliderLabel}>Mild</Text>
+              <Text style={styles.sliderLabel}>Intense</Text>
             </View>
           </View>
 
-          {/* Note */}
+          {/* ── Note ─────────────────────────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Add a note (optional)</Text>
             <TextInput
@@ -205,50 +243,26 @@ export default function LogScreen() {
             <Text style={styles.charCount}>{note.length}/500</Text>
           </View>
 
-          {/* Tags */}
+          {/* ── Tags ─────────────────────────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>What influenced your mood?</Text>
-            <View style={styles.tagsGrid}>
-              {TAGS.map((tag) => {
-                const active = selectedTags.includes(tag);
-                return (
-                  <TouchableOpacity
-                    key={tag}
-                    style={[
-                      styles.tagChip,
-                      active && {
-                        backgroundColor: Colors.primaryLight,
-                        borderColor: Colors.primary,
-                      },
-                    ]}
-                    onPress={() => toggleTag(tag)}
-                  >
-                    <Text
-                      style={[
-                        styles.tagChipText,
-                        {
-                          color: active ? Colors.primary : Colors.textSecondary,
-                        },
-                      ]}
-                    >
-                      {tag}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <TagSelector selected={selectedTags} onChange={setSelectedTags} />
           </View>
 
-          {/* Save Button */}
+          {/* ── Save Button ───────────────────────────────────────────────────── */}
           <TouchableOpacity
-            style={[styles.saveBtn, !selectedMood && styles.saveBtnDisabled]}
+            style={[styles.saveBtn, !selectedEmotion && styles.saveBtnDisabled]}
             onPress={handleSave}
             activeOpacity={0.85}
             disabled={saving}
           >
             <LinearGradient
               colors={
-                selectedMood ? ["#7C6FFF", "#9F97FF"] : ["#D1D5DB", "#D1D5DB"]
+                selectedEmotion && selectedCore
+                  ? [selectedCore.color, selectedCore.secColor]
+                  : selectedEmotion
+                    ? ["#7C6FFF", "#9F97FF"]
+                    : ["#D1D5DB", "#D1D5DB"]
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -259,13 +273,24 @@ export default function LogScreen() {
               ) : (
                 <>
                   <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.saveBtnText}>Save Mood</Text>
+                  <Text style={styles.saveBtnText}>
+                    {isToday ? 'Save Mood' : `Save for ${dateDisplayLabel}`}
+                  </Text>
                 </>
               )}
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ── Date Picker Modal ─────────────────────────────────────────────────── */}
+      <DatePickerModal
+        visible={datePickerOpen}
+        selectedDate={selectedDate}
+        loggedDates={loggedDates}
+        onSelect={setSelectedDate}
+        onClose={() => setDatePickerOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -275,78 +300,66 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingHorizontal: 20, paddingBottom: 40, gap: 24 },
 
-  header: { paddingTop: 16, gap: 6 },
+  header: { paddingTop: 16, gap: 10 },
+  headerTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "800",
     color: Colors.textPrimary,
     letterSpacing: -0.8,
-    lineHeight: 34,
+    lineHeight: 32,
   },
-  subtitle: { fontSize: 15, color: Colors.textSecondary },
-
-  moodGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  moodOption: {
-    flex: 1,
-    aspectRatio: 0.8,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
+  dateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: Colors.card,
     borderWidth: 1.5,
     borderColor: Colors.border,
-    overflow: "hidden",
-    position: "relative",
-    gap: 4,
-    padding: 6,
+    marginTop: 4,
   },
-  moodSelectedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.1,
+  dateChipPast: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
   },
-  moodEmoji: { fontSize: 26 },
-  moodLabel: { fontSize: 10, fontWeight: "600", textAlign: "center", lineHeight: 13 },
-  checkmark: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  dateChipText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  dateChipTextPast: { color: Colors.primary },
 
-  section: { gap: 12 },
+  section: { gap: 10 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  sectionLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: Colors.textPrimary,
+  sectionLabel: { fontSize: 15, fontWeight: "700", color: Colors.textPrimary },
+  sectionHint: { fontSize: 12, color: Colors.textMuted, marginTop: -4 },
+
+  wheelContainer: { alignItems: 'center', marginVertical: 4 },
+
+  selectionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: Colors.card,
+    borderWidth: 2,
   },
+  selectionEmoji: { fontSize: 24 },
+  selectionLabel: { fontSize: 15, fontWeight: '700' },
+  selectionCore: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+
   intensityBadge: {
-    backgroundColor: Colors.primaryLight,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  intensityBadgeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Colors.primary,
-  },
+  intensityBadgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 
-  sliderWrapper: {
-    height: 44,
-    justifyContent: "center",
-  },
+  sliderWrapper: { height: 44, justifyContent: "center" },
   sliderGradient: {
     height: 14,
     borderRadius: 7,
@@ -356,21 +369,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(0,0,0,0.05)",
   },
-  slider: {
-    width: "100%",
-    height: 44,
-    transform: [{ scaleY: 1.8 }],
-  },
-  sliderLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: -4,
-  },
-  sliderLabel: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: "500",
-  },
+  slider: { width: "100%", height: 44, transform: [{ scaleY: 1.8 }] },
+  sliderLabels: { flexDirection: "row", justifyContent: "space-between", marginTop: -4 },
+  sliderLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: "500" },
 
   noteInput: {
     backgroundColor: Colors.card,
@@ -383,26 +384,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     lineHeight: 22,
   },
-  charCount: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    textAlign: "right",
-    marginTop: -4,
-  },
-
-  tagsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  tagChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 99,
-    backgroundColor: Colors.card,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  tagChipText: { fontSize: 13, fontWeight: "500" },
+  charCount: { fontSize: 12, color: Colors.textMuted, textAlign: "right", marginTop: -4 },
 
   saveBtn: { borderRadius: 16, overflow: "hidden", marginTop: 8 },
-  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnDisabled: { opacity: 0.55 },
   saveBtnGradient: {
     paddingVertical: 17,
     flexDirection: "row",
@@ -410,10 +395,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-  saveBtnText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#fff",
-    letterSpacing: -0.2,
-  },
+  saveBtnText: { fontSize: 17, fontWeight: "700", color: "#fff", letterSpacing: -0.2 },
 });

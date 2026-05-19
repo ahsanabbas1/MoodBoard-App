@@ -732,7 +732,14 @@ export default function FamilyFriendsScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>Family & Friends Circle</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity
+          style={styles.mapBtn}
+          onPress={() => router.push('/(tabs)/map' as any)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="map-outline" size={18} color={Colors.primary} />
+          <Text style={styles.mapBtnText}>Map</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Tabs */}
@@ -1338,6 +1345,18 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   title: { fontSize: 18, fontWeight: "700", color: Colors.textPrimary },
+  mapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  mapBtnText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
 
   tabRow: { flexDirection: "row", justifyContent: "center", marginBottom: 10 },
   tab: {

@@ -54,8 +54,48 @@ export const MOODS: MoodConfig[] = [
 export const getMoodConfig = (level: MoodLevel): MoodConfig =>
   MOODS.find((m) => m.level === level) ?? MOODS[2];
 
+/** Legacy flat list — kept for backward compat (entry detail editing). */
 export const TAGS = [
   'Work', 'Family', 'Friends', 'Health', 'Exercise',
   'Sleep', 'Food', 'Weather', 'Anxiety', 'Grateful',
   'Tired', 'Productive', 'Social', 'Creative', 'Relaxed',
+];
+
+export interface TagCategory {
+  category: string;
+  icon: string;
+  tags: string[];
+}
+
+export const TAG_CATEGORIES: TagCategory[] = [
+  {
+    category: 'Work & Focus',
+    icon: '💼',
+    tags: ['Work', 'Productive', 'Meeting', 'Deadline', 'Achievement', 'Study', 'Creative', 'Focus'],
+  },
+  {
+    category: 'Relationships',
+    icon: '👥',
+    tags: ['Family', 'Friends', 'Partner', 'Social', 'Conflict', 'Support', 'Lonely', 'Community'],
+  },
+  {
+    category: 'Physical',
+    icon: '💪',
+    tags: ['Exercise', 'Sleep', 'Food', 'Health', 'Energy', 'Sick', 'Tired', 'Rest'],
+  },
+  {
+    category: 'Mental',
+    icon: '🧠',
+    tags: ['Anxiety', 'Stress', 'Grateful', 'Mindful', 'Relaxed', 'Overwhelmed', 'Calm', 'Hopeful'],
+  },
+  {
+    category: 'Environment',
+    icon: '🌤',
+    tags: ['Weather', 'Home', 'Travel', 'Nature', 'Noise', 'Music', 'City', 'Outdoors'],
+  },
+  {
+    category: 'Events',
+    icon: '🎉',
+    tags: ['Party', 'Shopping', 'Reading', 'Movie', 'Gaming', 'Celebration', 'Routine', 'Spontaneous'],
+  },
 ];

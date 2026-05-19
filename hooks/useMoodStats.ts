@@ -38,6 +38,9 @@ export function useMoodStats(weekOffset = 0) {
         }),
         fullDate: dateStr,
         mood: entry ? (entry.mood as MoodLevel) : null,
+        intensity: entry?.intensity,
+        emotionCore: entry?.emotionCore,
+        emotionEmoji: entry?.emotionEmoji,
         isToday: toDateString(d) === toDateString(today),
         isFuture: d > today,
       };

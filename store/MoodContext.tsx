@@ -8,7 +8,16 @@ import { invalidateInsightsCache } from '../services/aiInsightsService';
 
 interface MoodContextType {
   entries: MoodEntry[];
-  addEntry: (mood: MoodLevel, intensity: number, note: string, tags: string[]) => Promise<void>;
+  addEntry: (
+    mood: MoodLevel,
+    intensity: number,
+    note: string,
+    tags: string[],
+    emotionLabel?: string,
+    emotionCore?: string,
+    emotionEmoji?: string,
+    entryDate?: string,
+  ) => Promise<void>;
   editEntry: (id: string, note: string, tags: string[]) => Promise<void>;
   deleteEntry: (id: string) => Promise<void>;
   reload: () => Promise<void>;
@@ -56,12 +65,21 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
     setEntries(allEntries);
   }
 
-  async function addEntry(mood: MoodLevel, intensity: number, note: string, tags: string[]) {
+  async function addEntry(
+    mood: MoodLevel,
+    intensity: number,
+    note: string,
+    tags: string[],
+    emotionLabel?: string,
+    emotionCore?: string,
+    emotionEmoji?: string,
+    entryDate?: string,
+  ) {
     if (!user?.id) return;
     const now = new Date();
     const newEntry: MoodEntry = {
       id: `entry_${Date.now()}`,
-      date: toDateString(now),
+      date: entryDate ?? toDateString(now),
       time: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
       mood,
       intensity,
@@ -69,6 +87,9 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
       tags,
       createdAt: now.getTime(),
       timeZone: getUserTimeZone(),
+      emotionLabel,
+      emotionCore,
+      emotionEmoji,
     };
 
     await db.insertEntry(user.id, newEntry);
@@ -80,8 +101,8 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
 
     // Sync current mood emoji to Supabase profile for family/friends sharing
     try {
-      const moodConfig = getMoodConfig(mood);
-      await updateProfile({ currentMoodEmoji: moodConfig.emoji });
+      const displayEmoji = emotionEmoji ?? getMoodConfig(mood).emoji;
+      await updateProfile({ currentMoodEmoji: displayEmoji });
     } catch (e) {
       console.error('Failed to sync mood emoji to profile:', e);
     }
@@ -118,11 +139,25 @@ export function MoodProvider({ children }: { children: React.ReactNode }) {
   }
 
   function getStreak() {
-    let streak = 0;
+    if (entries.length === 0) return 0;
+
+    // Find the most recent entry date and start counting backward from there
+    const sortedDates = [...new Set(entries.map((e) => e.date))].sort().reverse();
+    const latestDateStr = sortedDates[0];
+
+    // Only count the streak if the latest entry is today or yesterday (still active)
     const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const todayStr = toDateString(today);
+    const yesterdayStr = toDateString(yesterday);
+    if (latestDateStr !== todayStr && latestDateStr !== yesterdayStr) return 0;
+
+    let streak = 0;
+    const anchor = new Date(latestDateStr + 'T12:00:00');
     for (let i = 0; i < 365; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+      const d = new Date(anchor);
+      d.setDate(anchor.getDate() - i);
       const dateStr = toDateString(d);
       if (entries.some((e) => e.date === dateStr)) {
         streak++;

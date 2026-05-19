@@ -163,6 +163,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatarUrl: data.avatar_url,
           currentMoodEmoji: data.current_mood_emoji,
           updatedAt: new Date(data.updated_at).getTime(),
+          latitude: data.latitude ?? undefined,
+          longitude: data.longitude ?? undefined,
+          locationUpdatedAt: data.location_updated_at ?? undefined,
+          locationSharing: data.location_sharing ?? 'none',
+          locationSharingWith: data.location_sharing_with ?? [],
         });
       }
     } catch (err) {
@@ -187,9 +192,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : user.currentMoodEmoji,
       updated_at: new Date().toISOString(),
     };
-    if (updates.username !== undefined) {
-      dbUpdates.username = updates.username;
-    }
+    if (updates.username !== undefined) dbUpdates.username = updates.username;
+    if (updates.latitude !== undefined) dbUpdates.latitude = updates.latitude;
+    if (updates.longitude !== undefined) dbUpdates.longitude = updates.longitude;
+    if (updates.locationUpdatedAt !== undefined) dbUpdates.location_updated_at = updates.locationUpdatedAt;
+    if (updates.locationSharing !== undefined) dbUpdates.location_sharing = updates.locationSharing;
+    if (updates.locationSharingWith !== undefined) dbUpdates.location_sharing_with = updates.locationSharingWith;
 
     const { error } = await supabase.from("profiles").upsert(dbUpdates);
     if (error) {

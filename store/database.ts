@@ -38,6 +38,11 @@ export async function initDatabase() {
       ALTER TABLE user_mood_entries ADD COLUMN timeZone TEXT;
     `).catch(() => {});
 
+    // Emotion wheel columns — safe to run on existing DBs (errors silently ignored)
+    await db.execAsync(`ALTER TABLE user_mood_entries ADD COLUMN emotionLabel TEXT;`).catch(() => {});
+    await db.execAsync(`ALTER TABLE user_mood_entries ADD COLUMN emotionCore TEXT;`).catch(() => {});
+    await db.execAsync(`ALTER TABLE user_mood_entries ADD COLUMN emotionEmoji TEXT;`).catch(() => {});
+
     // Performance indexes — safe to run multiple times (IF NOT EXISTS)
     await db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_mood_user_date
@@ -64,6 +69,9 @@ export async function getEntries(userId: string): Promise<MoodEntry[]> {
       ...row,
       intensity: row.intensity ?? 5,
       tags: row.tags ? JSON.parse(row.tags) : [],
+      emotionLabel: row.emotionLabel ?? undefined,
+      emotionCore: row.emotionCore ?? undefined,
+      emotionEmoji: row.emotionEmoji ?? undefined,
     }));
   } catch (err) {
     console.error("[DB] getEntries failed:", err);
@@ -76,8 +84,8 @@ export async function insertEntry(userId: string, entry: MoodEntry): Promise<voi
     const db = await getDb();
     await db.runAsync(
       `INSERT INTO user_mood_entries
-         (id, user_id, date, time, mood, intensity, note, tags, createdAt, timeZone)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, user_id, date, time, mood, intensity, note, tags, createdAt, timeZone, emotionLabel, emotionCore, emotionEmoji)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         entry.id,
         userId,
@@ -89,6 +97,9 @@ export async function insertEntry(userId: string, entry: MoodEntry): Promise<voi
         JSON.stringify(entry.tags),
         entry.createdAt,
         entry.timeZone ?? null,
+        entry.emotionLabel ?? null,
+        entry.emotionCore ?? null,
+        entry.emotionEmoji ?? null,
       ],
     );
   } catch (err) {

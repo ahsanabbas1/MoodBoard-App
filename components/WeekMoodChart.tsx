@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { getMoodConfig } from '../constants/Moods';
+import { CORE_TO_COLOR } from '../constants/EmotionWheel';
 import { MoodLevel } from '../types';
 import AnimatedEmoji from './AnimatedEmoji';
 
@@ -9,6 +10,9 @@ interface DayData {
   date?: number;
   month?: string;
   mood: MoodLevel | null;
+  intensity?: number;
+  emotionCore?: string;
+  emotionEmoji?: string;
   isToday?: boolean;
   isFuture?: boolean;
 }
@@ -29,15 +33,25 @@ export default function WeekMoodChart({ data, monthLabel }: Props) {
       <View style={styles.container}>
         {data.map((item, idx) => {
           const config = item.mood && !item.isFuture ? getMoodConfig(item.mood) : null;
-          const barHeight = item.mood && !item.isFuture ? (item.mood / 6) * maxHeight : 0;
+          // New entries use intensity (0–10) for bar height; old entries fall back to mood level (1–6)
+          const hasIntensity = item.intensity !== undefined && item.emotionCore !== undefined;
+          const barHeight = item.mood && !item.isFuture
+            ? hasIntensity
+              ? Math.max(8, (item.intensity! / 10) * maxHeight)
+              : (item.mood / 6) * maxHeight
+            : 0;
+          const barColor = hasIntensity
+            ? (CORE_TO_COLOR[item.emotionCore!] ?? config?.color ?? Colors.primary)
+            : (config?.color ?? Colors.primary);
+          const displayEmoji = item.emotionEmoji ?? config?.emoji ?? '•';
 
           return (
             <View key={idx} style={styles.dayCol}>
               {config ? (
                 <>
-                  <AnimatedEmoji emoji={config.emoji} type="bounceIn" delay={idx * 60} style={styles.emoji} />
+                  <AnimatedEmoji emoji={displayEmoji} type="bounceIn" delay={idx * 60} style={styles.emoji} />
                   <View style={styles.barTrack}>
-                    <View style={[styles.bar, { height: barHeight, backgroundColor: config.color }]} />
+                    <View style={[styles.bar, { height: barHeight, backgroundColor: barColor }]} />
                   </View>
                 </>
               ) : (
